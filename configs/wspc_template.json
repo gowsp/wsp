@@ -5,13 +5,13 @@
     "addrs": [
         {
             "forward": "local",
-            "name": "demo",
+            "name": "local",
             "local_addr": "192.168.5.16",
             "local_port": 22
         },
         {
             "forward": "remote",
-            "name": "demo",
+            "name": "remote",
             "local_addr": "127.0.0.1",
             "local_port": 9909
         }
