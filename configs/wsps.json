@@ -1,0 +1,5 @@
+{
+    "auth": "auth",
+    "path": "/proxy",
+    "port": 8010
+}

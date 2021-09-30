@@ -1,0 +1,19 @@
+{
+    "auth": "auth",
+    "server": "ws://127.0.0.1:8010/proxy",
+    "socks5": ":1080",
+    "addrs": [
+        {
+            "forward": "local",
+            "name": "demo",
+            "local_addr": "192.168.5.16",
+            "local_port": 22
+        },
+        {
+            "forward": "remote",
+            "name": "demo",
+            "local_addr": "127.0.0.1",
+            "local_port": 9909
+        }
+    ]
+}
