@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -18,7 +19,7 @@ type Wspc struct {
 	Config  *Config
 	network sync.Map
 	wan     *pkg.Wan
-	lan     sync.Map
+	routing *pkg.Routing
 }
 
 func (c *Wspc) connectWs() error {
@@ -34,16 +35,8 @@ func (c *Wspc) connectWs() error {
 		return fmt.Errorf("error auth")
 	}
 	c.wan = pkg.NewWan(ws)
+	c.routing = &pkg.Routing{}
 	return err
-}
-
-func (c *Wspc) Shutdown() {
-	c.lan.Range(func(key, val interface{}) bool {
-		val.(pkg.Bridge).Close()
-		c.wan.CloseRemote(key.(string), "client close the connection")
-		return true
-	})
-	c.wan.Close()
 }
 
 func (c *Wspc) ListenAndServe() {
@@ -84,13 +77,13 @@ func (c *Wspc) forward() {
 			log.Println("error reading webSocket message:", err)
 			break
 		}
-		var msg msg.WspMessage
-		err = proto.Unmarshal(data, &msg)
+		var m msg.WspMessage
+		err = proto.Unmarshal(data, &m)
 		if err != nil {
 			log.Println("error unmarshal message:", err)
 			continue
 		}
-		go c.process(&msg)
+		c.process(&msg.Data{Msg: &m, Raw: &data})
 	}
 	c.retry()
 }
@@ -99,30 +92,18 @@ func (c *Wspc) retry() {
 	time.Sleep(3 * time.Second)
 	c.ListenAndServe()
 }
-func (c *Wspc) process(message *msg.WspMessage) {
-	switch message.Cmd {
+func (c *Wspc) process(message *msg.Data) {
+	switch message.Cmd() {
 	case msg.WspCmd_CONN_REQ:
-		go c.NewConn(message)
-	case msg.WspCmd_CONN_REP:
-		c.onMessage(message)
-	case msg.WspCmd_FORWARD:
-		c.onMessage(message)
-	case msg.WspCmd_CLOSE:
-		if val, ok := c.lan.Load(message.Id); ok {
-			log.Printf("close by remote, reason: %s\n", string(message.Data))
-			c.lan.Delete(message.Id)
-			val.(pkg.Bridge).Close()
+		c.NewConn(message.Msg)
+	default:
+		err := c.routing.Routing(message)
+		if errors.Is(err, pkg.ConnNotExist) {
+			c.wan.CloseRemote(message.Id(), err.Error())
 		}
 	}
 }
-func (c *Wspc) onMessage(msg *msg.WspMessage) {
-	if val, ok := c.lan.Load(msg.Id); ok {
-		if val.(pkg.Bridge).Read(msg) {
-			return
-		}
-	}
-	c.wan.CloseRemote(msg.Id, "client conn not exists")
-}
+
 func (c *Wspc) NewConn(message *msg.WspMessage) {
 	var addr msg.WspAddr
 	err := proto.Unmarshal(message.Data, &addr)
@@ -132,7 +113,7 @@ func (c *Wspc) NewConn(message *msg.WspMessage) {
 	}
 	switch addr.Type {
 	case msg.WspType_LOCAL:
-		c.NewLocalConn(message.Id, addr.Address)
+		go c.NewLocalConn(message.Id, addr.Address)
 	default:
 		c.wan.CloseRemote(message.Id, fmt.Sprintf("unkonwn %v", addr.Type))
 	}

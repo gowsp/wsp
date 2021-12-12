@@ -23,12 +23,6 @@ func NewWan(ws *websocket.Conn) *Wan {
 func (w *Wan) NewWriter(id string) io.WriteCloser {
 	return &writer{id: id, ws: w.ws}
 }
-func (w *Wan) BinaryConn(singleton bool) net.Conn {
-	if singleton {
-		return w.binary
-	}
-	return websocket.NetConn(context.Background(), w.ws, websocket.MessageBinary)
-}
 func (w *Wan) Read() (websocket.MessageType, []byte, error) {
 	return w.ws.Read(context.Background())
 }

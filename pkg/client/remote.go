@@ -1,10 +1,8 @@
 package client
 
 import (
-	"io"
 	"log"
 	"net"
-	"sync/atomic"
 
 	"github.com/gowsp/wsp/pkg"
 	"github.com/gowsp/wsp/pkg/msg"
@@ -27,80 +25,27 @@ func (c *Wspc) ListenRemote(addr Addr) {
 	}
 }
 
-func (c *Wspc) NewRemoteConn(out net.Conn, address, secret string) {
+func (c *Wspc) NewRemoteConn(conn net.Conn, address, secret string) {
 	log.Println("open remote connect", address)
 	id := ksuid.New().String()
 
-	defer out.Close()
-
 	in := c.wan.NewWriter(id)
-	bridge := NewLanBridge(in, out)
-	c.lan.Store(id, bridge)
-	defer c.lan.Delete(id)
+	repeater := pkg.NewNetRepeater(in, conn)
+	c.routing.AddRepeater(id, repeater)
+
+	c.routing.AddPending(id, &pkg.Pending{OnReponse: func(message *msg.Data) {
+		defer c.routing.Delete(id)
+		defer log.Println("close remote connect", address)
+		if message.Payload()[0] == 0 {
+			return
+		}
+		repeater.Copy()
+	}})
 
 	err := c.wan.SecretDail(id, msg.WspType_REMOTE, address, secret)
 	if err != nil {
+		c.routing.Delete(id)
 		log.Println(err)
 		return
-	}
-
-	bridge.Forward()
-	log.Println("close remote connect", address)
-}
-
-type LanBridge struct {
-	in      io.WriteCloser
-	out     io.ReadWriteCloser
-	closed  uint32
-	closeIn chan bool
-}
-
-func NewLanBridge(in io.WriteCloser, out io.ReadWriteCloser) pkg.Bridge {
-	return &LanBridge{
-		in:      in,
-		out:     out,
-		closeIn: make(chan bool),
-	}
-}
-func (b *LanBridge) Read(message *msg.WspMessage) bool {
-	if b.IsClosed() {
-		return false
-	}
-	switch message.Cmd {
-	case msg.WspCmd_CONN_REP:
-		if message.Data[0] == 0 {
-			b.closeIn <- false
-			return true
-		}
-		log.Println("remote connection succeeded")
-		go func() {
-			_, err := io.Copy(b.in, b.out)
-			if err != nil {
-				log.Println(err)
-			}
-			b.closeIn <- true
-		}()
-	case msg.WspCmd_FORWARD:
-		_, err := b.out.Write(message.Data)
-		if err != nil {
-			b.closeIn <- true
-		}
-	}
-	return true
-}
-func (b *LanBridge) IsClosed() bool {
-	return atomic.LoadUint32(&b.closed) > 0
-}
-func (b *LanBridge) Close() {
-	if b.IsClosed() {
-		return
-	}
-	b.closeIn <- false
-}
-func (b *LanBridge) Forward() {
-	close := <-b.closeIn
-	atomic.AddUint32(&b.closed, 1)
-	if close {
-		b.in.Close()
 	}
 }

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"sync"
@@ -15,12 +16,12 @@ type Router struct {
 	server  *Wsps
 	network sync.Map
 	wan     *pkg.Wan
-	lan     sync.Map
+	routing *pkg.Routing
 }
 
 func (s *Wsps) NewRouter(ws *websocket.Conn) *Router {
 	wan := pkg.NewWan(ws)
-	return &Router{server: s, wan: wan}
+	return &Router{server: s, wan: wan, routing: &pkg.Routing{}}
 }
 
 func (r *Router) ServeConn() {
@@ -33,12 +34,12 @@ func (r *Router) ServeConn() {
 			log.Println("error reading webSocket message:", err)
 			break
 		}
-		var msg msg.WspMessage
-		if proto.Unmarshal(data, &msg) != nil {
+		var m msg.WspMessage
+		if proto.Unmarshal(data, &m) != nil {
 			log.Println("error unmarshal message:", err)
 			continue
 		}
-		go r.process(&msg)
+		r.process(&msg.Data{Msg: &m, Raw: &data})
 	}
 	r.network.Range(func(key, value interface{}) bool {
 		log.Printf("remove network %s", key)
@@ -47,30 +48,16 @@ func (r *Router) ServeConn() {
 	})
 }
 
-func (r *Router) process(message *msg.WspMessage) {
-	switch message.Cmd {
+func (r *Router) process(data *msg.Data) {
+	switch data.Cmd() {
 	case msg.WspCmd_CONN_REQ:
-		go r.NewConn(message)
-	case msg.WspCmd_CONN_REP:
-		r.Read(message)
-	case msg.WspCmd_FORWARD:
-		r.Read(message)
-	case msg.WspCmd_CLOSE:
-		if val, ok := r.lan.Load(message.Id); ok {
-			r.lan.Delete(message.Id)
-			val.(pkg.Bridge).Close()
+		r.NewConn(data.Msg)
+	default:
+		err := r.routing.Routing(data)
+		if errors.Is(err, pkg.ConnNotExist) {
+			r.wan.CloseRemote(data.Id(), err.Error())
 		}
 	}
-}
-
-func (r *Router) Read(message *msg.WspMessage) {
-	if val, ok := r.lan.Load(message.Id); ok {
-		if val.(pkg.Bridge).Read(message) {
-			return
-		}
-		r.wan.CloseRemote(message.Id, "conn not exists")
-	}
-	r.wan.CloseRemote(message.Id, "conn not exists")
 }
 
 func (r *Router) NewConn(message *msg.WspMessage) {
@@ -82,7 +69,7 @@ func (r *Router) NewConn(message *msg.WspMessage) {
 	}
 	switch addr.Type {
 	case msg.WspType_SOCKS5:
-		r.NewSocks5Conn(message.Id, addr.Address)
+		go r.NewSocks5Conn(message.Id, addr.Address)
 	case msg.WspType_REMOTE:
 		r.NewRemoteConn(message.Id, &addr)
 	case msg.WspType_LOCAL:

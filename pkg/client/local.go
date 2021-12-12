@@ -17,19 +17,19 @@ func (c *Wspc) NewLocalConn(id, address string) {
 		return
 	}
 	addr := val.(Addr)
-	out, err := net.DialTimeout("tcp", addr.Address(), 5*time.Second)
+	conn, err := net.DialTimeout("tcp", addr.Address(), 5*time.Second)
 	if err != nil {
 		c.wan.CloseRemote(id, fmt.Sprintf("error connect dial %s", address))
 		return
 	}
 
 	in := c.wan.NewWriter(id)
-	bridge := pkg.NewLanBridge(in, out)
-	c.lan.Store(id, bridge)
-	defer c.lan.Delete(id)
-	
+	repeater := pkg.NewNetRepeater(in, conn)
+	c.routing.AddRepeater(id, repeater)
+	defer c.routing.Delete(id)
+
 	c.wan.Reply(id, true)
 
-	bridge.Forward()
+	repeater.Copy()
 	log.Println("close local connect", address)
 }

@@ -23,7 +23,6 @@ func main() {
 	client := client.Wspc{Config: config}
 	go client.ListenAndServe()
 	<-c
-	client.Shutdown()
 	log.Println("wspc closed")
 }
 
