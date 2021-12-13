@@ -26,7 +26,10 @@ type NetRepeater struct {
 }
 
 func (r *NetRepeater) Copy() error {
-	_, err := io.Copy(r.wan, r.conn)
+	buf := bufPool.Get().(*[]byte)
+	defer bufPool.Put(buf)
+
+	_, err := io.CopyBuffer(r.wan, r.conn, *buf)
 	if err != nil {
 		log.Println(err)
 	}
@@ -34,6 +37,10 @@ func (r *NetRepeater) Copy() error {
 }
 func (r *NetRepeater) Relay(data *msg.Data) error {
 	_, err := r.conn.Write(data.Payload())
+	if err != nil {
+		log.Println(err)
+		return r.Close()
+	}
 	return err
 }
 func (r *NetRepeater) Interrupt() error {

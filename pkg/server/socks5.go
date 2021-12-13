@@ -16,8 +16,8 @@ func (p *Router) NewSocks5Conn(id, addr string) {
 		p.wan.Reply(id, false)
 		return
 	}
-	in := p.wan.NewWriter(id)
 
+	in := p.wan.NewWriter(id)
 	repeater := pkg.NewNetRepeater(in, conn)
 	p.routing.AddRepeater(id, repeater)
 	defer p.routing.Delete(id)

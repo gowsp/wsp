@@ -41,11 +41,13 @@ func (c *Wspc) ListenSocks5() {
 
 func (s *Socks5Listener) process(conn net.Conn) {
 	if err := s.auth(conn); err != nil {
+		conn.Close()
 		log.Println("auth error:", err)
 		return
 	}
 	addr, err := s.readAddr(conn)
 	if err != nil {
+		conn.Close()
 		log.Println("connect error:", err)
 		return
 	}
@@ -116,6 +118,7 @@ func (c *Wspc) Socks5Conn(conn net.Conn, addr string) {
 	c.routing.AddRepeater(id, repeater)
 
 	if err := c.wan.Dail(id, msg.WspType_SOCKS5, addr); err != nil {
+		repeater.Interrupt()
 		c.routing.Delete(id)
 		log.Println(err)
 		return
@@ -125,6 +128,7 @@ func (c *Wspc) Socks5Conn(conn net.Conn, addr string) {
 		defer log.Println("close conn", addr)
 		if message.Payload()[0] == 0 {
 			conn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+			repeater.Interrupt()
 			return
 		}
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})

@@ -35,7 +35,7 @@ func (c *Wspc) connectWs() error {
 		return fmt.Errorf("error auth")
 	}
 	c.wan = pkg.NewWan(ws)
-	c.routing = &pkg.Routing{}
+	c.routing = pkg.NewRouting()
 	return err
 }
 

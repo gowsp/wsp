@@ -13,6 +13,10 @@ type Pending struct {
 	OnReponse func(*msg.Data)
 }
 
+func NewRouting() *Routing {
+	return &Routing{}
+}
+
 type Routing struct {
 	tables  sync.Map
 	pending sync.Map
@@ -39,7 +43,8 @@ func (s *Routing) Routing(data *msg.Data) error {
 		return ConnNotExist
 	case msg.WspCmd_FORWARD:
 		if val, ok := s.tables.Load(data.Id()); ok {
-			return val.(Repeater).Relay(data)
+			val.(Repeater).Relay(data)
+			return nil
 		}
 		return ConnNotExist
 	case msg.WspCmd_CLOSE:

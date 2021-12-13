@@ -21,7 +21,7 @@ type Router struct {
 
 func (s *Wsps) NewRouter(ws *websocket.Conn) *Router {
 	wan := pkg.NewWan(ws)
-	return &Router{server: s, wan: wan, routing: &pkg.Routing{}}
+	return &Router{server: s, wan: wan, routing: pkg.NewRouting()}
 }
 
 func (r *Router) ServeConn() {

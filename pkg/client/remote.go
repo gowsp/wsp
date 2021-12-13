@@ -37,13 +37,15 @@ func (c *Wspc) NewRemoteConn(conn net.Conn, address, secret string) {
 		defer c.routing.Delete(id)
 		defer log.Println("close remote connect", address)
 		if message.Payload()[0] == 0 {
+			repeater.Interrupt()
 			return
 		}
 		repeater.Copy()
 	}})
-
+	
 	err := c.wan.SecretDail(id, msg.WspType_REMOTE, address, secret)
 	if err != nil {
+		repeater.Interrupt()
 		c.routing.Delete(id)
 		log.Println(err)
 		return
