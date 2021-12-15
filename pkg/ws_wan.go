@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net"
+	"time"
 
 	"github.com/gowsp/wsp/pkg/msg"
 	"google.golang.org/protobuf/proto"
@@ -22,6 +23,13 @@ func NewWan(ws *websocket.Conn) *Wan {
 }
 func (w *Wan) NewWriter(id string) io.WriteCloser {
 	return &writer{id: id, ws: w.ws}
+}
+func (w *Wan) HeartBeat(d time.Duration) {
+	t := time.NewTicker(d)
+	for {
+		<-t.C
+		w.ws.Ping(context.Background())
+	}
 }
 func (w *Wan) Read() (websocket.MessageType, []byte, error) {
 	return w.ws.Read(context.Background())
