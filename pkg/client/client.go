@@ -5,7 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"sync"
 	"time"
 
@@ -63,10 +66,21 @@ func (c *Wspc) readConfig() {
 		case "remote":
 			log.Printf("listen local address %v", val.Name)
 			go c.ListenRemote(val)
+		case "http":
+			c.dailHttp(val, "http")
+		case "https":
+			c.dailHttp(val, "https")
 		default:
 			log.Println("unknown type", val.Forward)
 		}
 	}
+}
+func (c *Wspc) dailHttp(val Addr, scheme string) {
+	local := val.LocalAddr
+	host := net.JoinHostPort(local, strconv.Itoa(val.LocalPort))
+	addr := url.URL{Scheme: scheme, Host: host}
+	c.wan.DailHttp(val.Name, msg.WspType_HTTP, val.Name, addr.String())
+	c.network.Store(val.Name, val)
 }
 func (c *Wspc) forward() {
 	for {
@@ -99,7 +113,7 @@ func (c *Wspc) process(message *msg.Data) {
 		c.NewConn(message.Msg)
 	default:
 		err := c.routing.Routing(message)
-		if errors.Is(err, pkg.ConnNotExist) {
+		if errors.Is(err, pkg.ErrConnNotExist) {
 			c.wan.CloseRemote(message.Id(), err.Error())
 		}
 	}
@@ -115,6 +129,8 @@ func (c *Wspc) NewConn(message *msg.WspMessage) {
 	switch addr.Type {
 	case msg.WspType_LOCAL:
 		go c.NewLocalConn(message.Id, addr.Address)
+	case msg.WspType_HTTP:
+		go c.NewHttpConn(message.Id, addr.Address)
 	default:
 		c.wan.CloseRemote(message.Id, fmt.Sprintf("unkonwn %v", addr.Type))
 	}

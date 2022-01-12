@@ -5,18 +5,19 @@ enum WspType{
   LOCAL = 0;
   REMOTE = 1;
   SOCKS5 = 2;
+  HTTP = 3;
 }
 message WspAddr {
    WspType type = 1;
    string address = 2;
    string secret = 3;
+   string domain = 4;
 }
 enum WspCmd{
   CONN_REQ = 0;
   CONN_REP = 1;
   FORWARD = 2;
   CLOSE = 3;
-  PING = 4;
 }
 message WspMessage {
   string id = 1;

@@ -9,13 +9,13 @@ import (
 )
 
 func (r *Router) NewRemoteConn(id string, addr *msg.WspAddr) {
-	if val, ok := r.server.network.Load(addr.Address); ok {
+	if val, ok := r.GlobalHub().LoadLocal(addr.Address); ok {
 		log.Printf("start bridge on %s\n", addr.Address)
 		l := val.(*Router)
 
-		registered, ok := l.network.Load(addr.Address)
+		registered, ok := l.hub.LoadLocal(addr.Address)
 		if !ok {
-			r.server.network.Delete(addr.Address)
+			r.GlobalHub().local.Delete(addr.Address)
 			r.wan.CloseRemote(id, fmt.Sprintf("net %s not registered", addr.Address))
 			return
 		}

@@ -1,12 +1,20 @@
 package pkg
 
-import "sync"
+import (
+	"bytes"
+	"sync"
+)
 
 var bufPool = &sync.Pool{
 	New: func() interface{} {
 		size := 32 * 1024
 		buf := make([]byte, size)
 		return &buf
+	},
+}
+var BufPool = &sync.Pool{
+	New: func() interface{} {
+		return new(bytes.Buffer)
 	},
 }
 

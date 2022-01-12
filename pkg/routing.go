@@ -7,7 +7,7 @@ import (
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
-var ConnNotExist = errors.New("connection does not exist")
+var ErrConnNotExist = errors.New("connection does not exist")
 
 type Pending struct {
 	OnReponse func(*msg.Data)
@@ -40,13 +40,13 @@ func (s *Routing) Routing(data *msg.Data) error {
 			go val.(*Pending).OnReponse(data)
 			return nil
 		}
-		return ConnNotExist
+		return ErrConnNotExist
 	case msg.WspCmd_FORWARD:
 		if val, ok := s.tables.Load(data.Id()); ok {
 			val.(Repeater).Relay(data)
 			return nil
 		}
-		return ConnNotExist
+		return ErrConnNotExist
 	case msg.WspCmd_CLOSE:
 		if val, ok := s.tables.Load(data.Id()); ok {
 			s.tables.Delete(data.Id())

@@ -13,15 +13,23 @@ import (
 )
 
 type Router struct {
-	server  *Wsps
-	network sync.Map
+	wsps    *Wsps
+	hub     *Hub
 	wan     *pkg.Wan
 	routing *pkg.Routing
+	http    sync.Map
 }
 
-func (s *Wsps) NewRouter(ws *websocket.Conn) *Router {
+func (wsps *Wsps) NewRouter(ws *websocket.Conn) *Router {
 	wan := pkg.NewWan(ws)
-	return &Router{server: s, wan: wan, routing: pkg.NewRouting()}
+	return &Router{wsps: wsps, wan: wan, hub: &Hub{}, routing: pkg.NewRouting()}
+}
+
+func (r *Router) GlobalHub() *Hub {
+	return r.wsps.hub
+}
+func (r *Router) GlobalConfig() *Config {
+	return r.wsps.config
 }
 
 func (r *Router) ServeConn() {
@@ -41,11 +49,7 @@ func (r *Router) ServeConn() {
 		}
 		r.process(&msg.Data{Msg: &m, Raw: &data})
 	}
-	r.network.Range(func(key, value interface{}) bool {
-		log.Printf("remove network %s", key)
-		r.server.network.Delete(key)
-		return true
-	})
+	r.GlobalHub().Delete(r.hub)
 }
 
 func (r *Router) process(data *msg.Data) {
@@ -54,7 +58,7 @@ func (r *Router) process(data *msg.Data) {
 		r.NewConn(data.Msg)
 	default:
 		err := r.routing.Routing(data)
-		if errors.Is(err, pkg.ConnNotExist) {
+		if errors.Is(err, pkg.ErrConnNotExist) {
 			r.wan.CloseRemote(data.Id(), err.Error())
 		}
 	}
@@ -73,18 +77,20 @@ func (r *Router) NewConn(message *msg.WspMessage) {
 	case msg.WspType_REMOTE:
 		r.NewRemoteConn(message.Id, &addr)
 	case msg.WspType_LOCAL:
-		r.NewLocalConn(message.Id, &addr)
+		r.AddLocalConn(message.Id, &addr)
+	case msg.WspType_HTTP:
+		r.AddHttpConn(message.Id, &addr)
 	default:
 		r.wan.CloseRemote(message.Id, fmt.Sprintf("unkonwn %v", addr.Type))
 	}
 }
 
-func (r *Router) NewLocalConn(id string, addr *msg.WspAddr) {
-	if _, ok := r.server.network.Load(addr); ok {
+func (r *Router) AddLocalConn(id string, addr *msg.WspAddr) {
+	if r.GlobalHub().ExistHttp(addr.Address) {
 		r.wan.CloseRemote(id, fmt.Sprintf("name %s registered", addr))
 	} else {
-		log.Printf("server register address %s", addr.Address)
-		r.network.Store(addr.Address, addr)
-		r.server.network.Store(addr.Address, r)
+		log.Printf("server register http %s", addr.Address)
+		r.hub.AddLocal(addr.Address, addr)
+		r.GlobalHub().AddLocal(addr.Address, r)
 	}
 }

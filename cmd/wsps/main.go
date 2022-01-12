@@ -23,11 +23,9 @@ func main() {
 		log.Println(err)
 		return
 	}
-	ser := server.Wsps{Config: config}
-	http.HandleFunc(config.Path, ser.Serve)
-
+	wsps := server.NewDefaltWsps(config)
 	addr := fmt.Sprintf(":%d", config.Port)
-	srv := &http.Server{Addr: addr}
+	srv := &http.Server{Handler: wsps, Addr: addr}
 	go func() {
 		log.Printf("wsps will start at %s, path %s ", addr, config.Path)
 		if err := srv.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {

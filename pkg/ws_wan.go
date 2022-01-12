@@ -46,6 +46,15 @@ func (w *Wan) Dail(id string, wspType msg.WspType, address string) (err error) {
 	_, err = w.Write(data)
 	return err
 }
+func (w *Wan) DailHttp(id string, wspType msg.WspType, address string, url string) (err error) {
+	addr, err := proto.Marshal(&msg.WspAddr{Type: wspType, Address: address, Domain: url})
+	if err != nil {
+		return err
+	}
+	data := Wrap(id, msg.WspCmd_CONN_REQ, addr)
+	_, err = w.Write(data)
+	return err
+}
 func (w *Wan) SecretDail(id string, wspType msg.WspType, address, secret string) (err error) {
 	addr, err := proto.Marshal(&msg.WspAddr{Type: wspType, Address: address, Secret: secret})
 	if err != nil {

@@ -28,23 +28,21 @@ func TestShutdown(t *testing.T) {
 }
 
 func TestSocks5(t *testing.T) {
-	ser := server.Wsps{Config: &server.Config{Auth: "auth", Path: "proxy"}}
-	http.HandleFunc("/proxy", ser.Serve)
-	go http.ListenAndServe(":8080", nil)
+	wsps := server.NewDefaltWsps(&server.Config{Auth: "auth", Path: "/proxy"})
+	go http.ListenAndServe(":8080", wsps)
 	time.Sleep(1 * time.Second)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	client := client.Wspc{Config: &client.Config{Auth: "auth", Server: "ws://127.0.0.1:8080/proxy", Socks5: ":1080"}}
+	client := client.Wspc{Config: &client.Config{Auth: "auth", Server: "ws://127.0.0.1:8080/proxy", Socks5: ":1088"}}
 	client.ListenAndServe()
 	<-c
 	log.Println("closed")
 }
 
 func TestProxy(t *testing.T) {
-	ser := server.Wsps{Config: &server.Config{Auth: "auth", Path: "proxy"}}
-	http.HandleFunc("/proxy", ser.Serve)
-	go http.ListenAndServe(":8080", nil)
+	wsps := server.NewDefaltWsps(&server.Config{Auth: "auth", Path: "/proxy"})
+	go http.ListenAndServe(":8080", wsps)
 	time.Sleep(1 * time.Second)
 
 	config := &client.Config{Auth: "auth",
@@ -67,4 +65,33 @@ func TestProxy(t *testing.T) {
 	s := make(chan os.Signal, 1)
 	signal.Notify(s, os.Interrupt)
 	<-s
+}
+
+func TestHttp(t *testing.T) {
+	config := &server.Config{Auth: "auth"}
+	wsps := server.NewDefaltWsps(config)
+	go http.ListenAndServe(":8080", wsps)
+	time.Sleep(1 * time.Second)
+
+	server := http.NewServeMux()
+	server.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		msg := "index"
+		rw.Write([]byte(msg))
+	})
+	server.HandleFunc("/greet", func(rw http.ResponseWriter, r *http.Request) {
+		msg := "hello"
+		rw.Write([]byte(msg))
+	})
+	web := http.Server{Handler: server, Addr: ":8010"}
+	go web.ListenAndServe()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	client := client.Wspc{Config: &client.Config{Auth: "auth",
+		Server: "ws://127.0.0.1:8080",
+		Addrs:  []client.Addr{{Forward: "http", Name: "proxy", LocalAddr: "127.0.0.1", LocalPort: 8010}},
+	}}
+	client.ListenAndServe()
+	<-c
+	log.Println("closed")
 }

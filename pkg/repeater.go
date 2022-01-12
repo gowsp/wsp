@@ -20,9 +20,9 @@ func NewNetRepeater(wan io.WriteCloser, conn net.Conn) *NetRepeater {
 }
 
 type NetRepeater struct {
-	conn      net.Conn
-	wan       io.WriteCloser
-	interrupt uint32
+	conn   net.Conn
+	wan    io.WriteCloser
+	closed uint32
 }
 
 func (r *NetRepeater) Copy() error {
@@ -30,6 +30,9 @@ func (r *NetRepeater) Copy() error {
 	defer bufPool.Put(buf)
 
 	_, err := io.CopyBuffer(r.wan, r.conn, *buf)
+	if r.IsClosed() {
+		return nil
+	}
 	if err != nil {
 		log.Println(err)
 	}
@@ -44,11 +47,18 @@ func (r *NetRepeater) Relay(data *msg.Data) error {
 	return err
 }
 func (r *NetRepeater) Interrupt() error {
-	atomic.AddUint32(&r.interrupt, 1)
-	return r.conn.Close()
+	atomic.AddUint32(&r.closed, 1)
+	return r.Close()
+}
+func (r *NetRepeater) IsClosed() bool {
+	return atomic.LoadUint32(&r.closed) > 0
+}
+func (r *NetRepeater) NotClosed() bool {
+	return atomic.LoadUint32(&r.closed) == 0
 }
 func (r *NetRepeater) Close() error {
-	if atomic.LoadUint32(&r.interrupt) == 0 {
+	if r.NotClosed() {
+		atomic.AddUint32(&r.closed, 1)
 		r.wan.Close()
 	}
 	return r.conn.Close()
