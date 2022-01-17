@@ -5,24 +5,29 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"net"
 	"net/http"
-	"net/url"
-	"strconv"
 	"sync"
 	"time"
 
-	"github.com/gowsp/wsp/pkg"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/proxy"
 	"google.golang.org/protobuf/proto"
 	"nhooyr.io/websocket"
 )
 
+type Config struct {
+	Auth    string   `json:"auth,omitempty"`
+	Server  string   `json:"server,omitempty"`
+	Local   []string `json:"local,omitempty"`
+	Remote  []string `json:"remote,omitempty"`
+	Dynamic []string `json:"dynamic,omitempty"`
+}
+
 type Wspc struct {
 	Config  *Config
-	network sync.Map
-	wan     *pkg.Wan
-	routing *pkg.Routing
+	channel sync.Map
+	routing *proxy.Routing
+	wan     *proxy.Wan
 }
 
 func (c *Wspc) connectWs() error {
@@ -37,9 +42,9 @@ func (c *Wspc) connectWs() error {
 	if resp.Status == "403" {
 		return fmt.Errorf("error auth")
 	}
-	c.wan = pkg.NewWan(ws)
+	c.wan = proxy.NewWan(ws)
 	go c.wan.HeartBeat(time.Second * 30)
-	c.routing = pkg.NewRouting()
+	c.routing = proxy.NewRouting()
 	return err
 }
 
@@ -49,40 +54,16 @@ func (c *Wspc) ListenAndServe() {
 		log.Println(err)
 		return
 	}
-	if c.Config.Socks5 != "" {
-		go c.ListenSocks5()
-	}
-	c.readConfig()
 	c.forward()
+	c.start()
 }
 
-func (c *Wspc) readConfig() {
-	for _, val := range c.Config.Addrs {
-		switch val.Forward {
-		case "local":
-			c.wan.SecretDail(val.Name, msg.WspType_LOCAL, val.Name, val.Secret)
-			log.Printf("register local address %s", val.Name)
-			c.network.Store(val.Name, val)
-		case "remote":
-			log.Printf("listen local address %v", val.Name)
-			go c.ListenRemote(val)
-		case "http":
-			c.dailHttp(val, "http")
-		case "https":
-			c.dailHttp(val, "https")
-		default:
-			log.Println("unknown type", val.Forward)
-		}
-	}
-}
-func (c *Wspc) dailHttp(val Addr, scheme string) {
-	local := val.LocalAddr
-	host := net.JoinHostPort(local, strconv.Itoa(val.LocalPort))
-	addr := url.URL{Scheme: scheme, Host: host}
-	c.wan.DailHttp(val.Name, msg.WspType_HTTP, val.Name, addr.String())
-	c.network.Store(val.Name, val)
-}
 func (c *Wspc) forward() {
+	c.LocalForward()
+	c.RemoteForward()
+	c.DynamicForward()
+}
+func (c *Wspc) start() {
 	for {
 		_, data, err := c.wan.Read()
 		if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
@@ -109,29 +90,30 @@ func (c *Wspc) retry() {
 }
 func (c *Wspc) process(message *msg.Data) {
 	switch message.Cmd() {
-	case msg.WspCmd_CONN_REQ:
-		c.NewConn(message.Msg)
+	case msg.WspCmd_CONNECT:
+		go func() {
+			err := c.NewConn(message.Msg)
+			if err != nil {
+				c.wan.ReplyMessage(message.Id(), false, err.Error())
+			}
+		}()
 	default:
 		err := c.routing.Routing(message)
-		if errors.Is(err, pkg.ErrConnNotExist) {
+		if errors.Is(err, proxy.ErrConnNotExist) {
 			c.wan.CloseRemote(message.Id(), err.Error())
 		}
 	}
 }
 
-func (c *Wspc) NewConn(message *msg.WspMessage) {
-	var addr msg.WspAddr
-	err := proto.Unmarshal(message.Data, &addr)
+func (c *Wspc) NewConn(message *msg.WspMessage) error {
+	var reqeust msg.WspRequest
+	err := proto.Unmarshal(message.Data, &reqeust)
 	if err != nil {
-		log.Println("error unmarshal addr", err)
-		return
+		return err
 	}
-	switch addr.Type {
-	case msg.WspType_LOCAL:
-		go c.NewLocalConn(message.Id, addr.Address)
-	case msg.WspType_HTTP:
-		go c.NewHttpConn(message.Id, addr.Address)
-	default:
-		c.wan.CloseRemote(message.Id, fmt.Sprintf("unkonwn %v", addr.Type))
+	config, err := reqeust.ToConfig()
+	if err != nil {
+		return err
 	}
+	return c.NewRemoteConn(message.Id, config)
 }

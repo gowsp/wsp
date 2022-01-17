@@ -1,53 +1,67 @@
 package client
 
 import (
+	"fmt"
 	"log"
 	"net"
+	"time"
 
-	"github.com/gowsp/wsp/pkg"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
 )
 
-func (c *Wspc) ListenRemote(addr Addr) {
-	local, err := net.Listen("tcp", addr.Address())
-	if err != nil {
-		log.Println(err)
-		return
-	}
-	for {
-		conn, err := local.Accept()
+func (c *Wspc) RemoteForward() {
+	for _, val := range c.Config.Remote {
+		conf, err := msg.NewWspConfig(msg.WspType_REMOTE, val)
 		if err != nil {
-			log.Println(err)
+			log.Println("forward remote error,", err)
 			continue
 		}
-		c.NewRemoteConn(conn, addr.Name, addr.Secret)
+		go c.ListenRemote(conf)
+	}
+}
+func (c *Wspc) ListenRemote(conf *msg.WspConfig) {
+	log.Println("listen remote on channel", conf.Channel())
+	id := ksuid.New().String()
+	c.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, message *msg.WspResponse) {
+		if message.Code == msg.WspCode_FAILED {
+			log.Println("err", message.Data)
+			return
+		}
+		c.channel.Store(conf.Channel(), conf)
+	}})
+	if err := c.wan.Dail(id, conf); err != nil {
+		log.Println(err)
+		return
 	}
 }
 
-func (c *Wspc) NewRemoteConn(conn net.Conn, address, secret string) {
-	log.Println("open remote connect", address)
-	id := ksuid.New().String()
+func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
+	channel := remote.Channel()
+	log.Printf("received %s connection\n", channel)
+	defer log.Printf("close %s connection\n", channel)
+	val, ok := c.channel.Load(channel)
+	if !ok {
+		return fmt.Errorf(channel + " not found")
+	}
+
+	conf := val.(*msg.WspConfig)
+	if conf.Paasowrd() != remote.Paasowrd() {
+		return fmt.Errorf("%s password is incorrect", channel)
+	}
+	conn, err := net.DialTimeout(conf.Network(), conf.Address(), 5*time.Second)
+	if err != nil {
+		return err
+	}
 
 	in := c.wan.NewWriter(id)
-	repeater := pkg.NewNetRepeater(in, conn)
+	repeater := proxy.NewNetRepeater(in, conn)
 	c.routing.AddRepeater(id, repeater)
+	defer c.routing.Delete(id)
 
-	c.routing.AddPending(id, &pkg.Pending{OnReponse: func(message *msg.Data) {
-		defer c.routing.Delete(id)
-		defer log.Println("close remote connect", address)
-		if message.Payload()[0] == 0 {
-			repeater.Interrupt()
-			return
-		}
-		repeater.Copy()
-	}})
-	
-	err := c.wan.SecretDail(id, msg.WspType_REMOTE, address, secret)
-	if err != nil {
-		repeater.Interrupt()
-		c.routing.Delete(id)
-		log.Println(err)
-		return
-	}
+	c.wan.Reply(id, true)
+
+	repeater.Copy()
+	return nil
 }

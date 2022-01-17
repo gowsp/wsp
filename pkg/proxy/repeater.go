@@ -1,4 +1,4 @@
-package pkg
+package proxy
 
 import (
 	"io"
@@ -65,11 +65,12 @@ func (r *NetRepeater) Close() error {
 }
 
 func NewWsRepeater(id string, output io.Writer) Repeater {
-	return &WsRepeater{id, output}
+	return &WsRepeater{id: id, output: output}
 }
 
 type WsRepeater struct {
 	id     string
+	input  io.Writer
 	output io.Writer
 }
 
@@ -81,7 +82,7 @@ func (r *WsRepeater) Interrupt() error {
 	return r.Close()
 }
 func (r *WsRepeater) Close() error {
-	data := Wrap(r.id, msg.WspCmd_CLOSE, []byte{})
+	data := Wrap(r.id, msg.WspCmd_INTERRUPT, []byte{})
 	_, err := r.output.Write(data)
 	return err
 }

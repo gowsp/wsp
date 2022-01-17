@@ -4,43 +4,37 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gowsp/wsp/pkg"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/proxy"
 )
 
-func (r *Router) NewRemoteConn(id string, addr *msg.WspAddr) {
-	if val, ok := r.GlobalHub().LoadLocal(addr.Address); ok {
-		log.Printf("start bridge on %s\n", addr.Address)
-		l := val.(*Router)
+func (local *Router) NewLocal(id string, conf *msg.WspConfig) error {
+	key := conf.Channel()
+	if val, ok := local.wsps.LoadRouter(key); ok {
+		log.Printf("start bridge channel %s\n", key)
+		remote := val.(*Router)
 
-		registered, ok := l.hub.LoadLocal(addr.Address)
+		_, ok := remote.channel.Load(key)
 		if !ok {
-			r.GlobalHub().local.Delete(addr.Address)
-			r.wan.CloseRemote(id, fmt.Sprintf("net %s not registered", addr.Address))
-			return
+			return fmt.Errorf("channel not registered")
 		}
-		if registered.(*msg.WspAddr).Secret != addr.Secret {
-			r.wan.CloseRemote(id, fmt.Sprintf("net %s secret do not match", addr.Address))
-			return
-		}
-
-		inBrige := pkg.NewWsRepeater(id, l.wan)
-		r.routing.AddRepeater(id, inBrige)
-
-		outBrige := pkg.NewWsRepeater(id, r.wan)
-		l.routing.AddRepeater(id, outBrige)
-		l.routing.AddPending(id, &pkg.Pending{OnReponse: func(wm *msg.Data) {
-			outBrige.Relay(wm)
+		remote.routing.AddPending(id, &proxy.Pending{OnReponse: func(wm *msg.Data, res *msg.WspResponse) {
+			if res.Code == msg.WspCode_SUCCESS {
+				remoteWirter := proxy.NewWsRepeater(id, remote.wan)
+				local.routing.AddRepeater(id, remoteWirter)
+				localWriter := proxy.NewWsRepeater(id, local.wan)
+				remote.routing.AddRepeater(id, localWriter)
+			} else {
+				remote.routing.DeleteConn(id)
+			}
+			local.wan.Write(*wm.Raw)
 		}})
 
-		err := l.wan.Dail(id, msg.WspType_LOCAL, addr.Address)
-		if err != nil {
-			l.routing.Delete(id)
-			r.routing.Delete(id)
-			r.wan.CloseRemote(id, fmt.Sprintf("name %s connect error", addr.Address))
-			return
+		if err := remote.wan.Dail(id, conf); err != nil {
+			remote.routing.DeleteConn(id)
+			return err
 		}
-	} else {
-		r.wan.CloseRemote(id, fmt.Sprintf("name %s not register", addr.Address))
+		return nil
 	}
+	return fmt.Errorf("channel not registered")
 }

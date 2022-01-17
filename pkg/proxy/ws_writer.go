@@ -1,4 +1,4 @@
-package pkg
+package proxy
 
 import (
 	"context"
@@ -24,10 +24,10 @@ type writer struct {
 }
 
 func (w *writer) Write(p []byte) (n int, err error) {
-	data := Wrap(w.id, msg.WspCmd_FORWARD, p)
+	data := Wrap(w.id, msg.WspCmd_TRANSFER, p)
 	return len(p), w.ws.Write(context.Background(), websocket.MessageBinary, data)
 }
 func (w *writer) Close() error {
-	data := Wrap(w.id, msg.WspCmd_CLOSE, []byte{})
+	data := Wrap(w.id, msg.WspCmd_INTERRUPT, []byte{})
 	return w.ws.Write(context.Background(), websocket.MessageBinary, data)
 }

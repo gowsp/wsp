@@ -1,0 +1,33 @@
+syntax = "proto3";
+option go_package = "github.com/gowsp/wsp/pkg/msg";
+
+enum WspCmd {
+  CONNECT = 0;
+  RESPOND = 1;
+  TRANSFER = 2;
+  INTERRUPT = 3;
+}
+message WspMessage {
+  string id = 1;
+  WspCmd cmd = 2;
+  bytes data = 3;
+}
+
+enum WspType {
+  LOCAL = 0;
+  REMOTE = 1;
+  DYNAMIC = 2;
+}
+message WspRequest {
+  WspType type = 1;
+  string data = 2;
+}
+
+enum WspCode {
+  FAILED = 0;
+  SUCCESS = 1;
+}
+message WspResponse {
+  WspCode code = 1;
+  string data = 2;
+}

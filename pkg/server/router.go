@@ -6,28 +6,25 @@ import (
 	"log"
 	"sync"
 
-	"github.com/gowsp/wsp/pkg"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/proxy"
 	"google.golang.org/protobuf/proto"
 	"nhooyr.io/websocket"
 )
 
 type Router struct {
-	wsps    *Wsps
-	hub     *Hub
-	wan     *pkg.Wan
-	routing *pkg.Routing
+	channel sync.Map
 	http    sync.Map
+	wsps    *Wsps
+	wan     *proxy.Wan
+	routing *proxy.Routing
 }
 
 func (wsps *Wsps) NewRouter(ws *websocket.Conn) *Router {
-	wan := pkg.NewWan(ws)
-	return &Router{wsps: wsps, wan: wan, hub: &Hub{}, routing: pkg.NewRouting()}
+	wan := proxy.NewWan(ws)
+	return &Router{wsps: wsps, wan: wan, routing: proxy.NewRouting()}
 }
 
-func (r *Router) GlobalHub() *Hub {
-	return r.wsps.hub
-}
 func (r *Router) GlobalConfig() *Config {
 	return r.wsps.config
 }
@@ -49,48 +46,72 @@ func (r *Router) ServeConn() {
 		}
 		r.process(&msg.Data{Msg: &m, Raw: &data})
 	}
-	r.GlobalHub().Delete(r.hub)
+	r.wsps.Delete(r.channel)
 }
 
 func (r *Router) process(data *msg.Data) {
 	switch data.Cmd() {
-	case msg.WspCmd_CONN_REQ:
-		r.NewConn(data.Msg)
+	case msg.WspCmd_CONNECT:
+		err := r.NewConn(data.Msg)
+		if err != nil {
+			r.wan.ReplyMessage(data.Id(), false, err.Error())
+		}
 	default:
 		err := r.routing.Routing(data)
-		if errors.Is(err, pkg.ErrConnNotExist) {
+		if errors.Is(err, proxy.ErrConnNotExist) {
 			r.wan.CloseRemote(data.Id(), err.Error())
 		}
 	}
 }
 
-func (r *Router) NewConn(message *msg.WspMessage) {
-	var addr msg.WspAddr
-	err := proto.Unmarshal(message.Data, &addr)
+func (r *Router) NewConn(message *msg.WspMessage) error {
+	var req msg.WspRequest
+	err := proto.Unmarshal(message.Data, &req)
 	if err != nil {
-		log.Println("error unmarshal addr", err)
-		return
+		return err
 	}
-	switch addr.Type {
-	case msg.WspType_SOCKS5:
-		go r.NewSocks5Conn(message.Id, addr.Address)
-	case msg.WspType_REMOTE:
-		r.NewRemoteConn(message.Id, &addr)
+	conf, err := req.ToConfig()
+	if err != nil {
+		return err
+	}
+	switch req.Type {
+	case msg.WspType_DYNAMIC:
+		go r.NewDynamic(message.Id, conf)
+		return nil
 	case msg.WspType_LOCAL:
-		r.AddLocalConn(message.Id, &addr)
-	case msg.WspType_HTTP:
-		r.AddHttpConn(message.Id, &addr)
+		return r.NewLocal(message.Id, conf)
+	case msg.WspType_REMOTE:
+		return r.AddRemote(message.Id, conf)
 	default:
-		r.wan.CloseRemote(message.Id, fmt.Sprintf("unkonwn %v", addr.Type))
+		return fmt.Errorf("unknown %v", req.Type)
 	}
 }
 
-func (r *Router) AddLocalConn(id string, addr *msg.WspAddr) {
-	if r.GlobalHub().ExistHttp(addr.Address) {
-		r.wan.CloseRemote(id, fmt.Sprintf("name %s registered", addr))
-	} else {
-		log.Printf("server register http %s", addr.Address)
-		r.hub.AddLocal(addr.Address, addr)
-		r.GlobalHub().AddLocal(addr.Address, r)
+func (r *Router) AddRemote(id string, conf *msg.WspConfig) error {
+	channel := conf.Channel()
+	if r.wsps.Exist(channel) {
+		return fmt.Errorf("channel %s already registered", conf.Channel())
 	}
+	if conf.IsHttp() {
+		switch conf.Mode() {
+		case "path":
+			if conf.Value() == r.GlobalConfig().Path {
+				return fmt.Errorf("setting the same path as wsps is not allowed")
+			}
+		case "domain":
+			switch {
+			case r.GlobalConfig().Host == "":
+				return fmt.Errorf("wsps does not set host, domain method is not allowed")
+			case r.GlobalConfig().Host == conf.Value():
+				return fmt.Errorf("setting the same domain as wsps is not allowed")
+			}
+		default:
+			return fmt.Errorf("unsupported http mode %s", conf.Mode())
+		}
+	}
+	log.Println("register channel", channel)
+	r.wan.Reply(id, true)
+	r.wsps.Store(channel, r)
+	r.channel.Store(channel, conf)
+	return nil
 }

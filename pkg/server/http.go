@@ -4,81 +4,77 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gowsp/wsp/pkg"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
 )
 
-func (r *Router) AddHttpConn(id string, addr *msg.WspAddr) {
-	path := r.GlobalConfig().Path
-	if path == addr.Address {
-		r.wan.CloseRemote(id, fmt.Sprintf("name %s not allowd", addr))
+func (router *Router) ServeHTTP(channel string, rw http.ResponseWriter, r *http.Request) {
+	proxy := router.NewHttpProxy(channel)
+	if proxy == nil {
+		http.Error(rw, "router not exist", 404)
 		return
 	}
-	if r.GlobalHub().ExistLocal(addr.Address) {
-		r.wan.CloseRemote(id, fmt.Sprintf("name %s registered", addr))
-	} else {
-		log.Printf("server register address %s", addr.Address)
-		r.hub.AddHttp(addr.Address, addr)
-		r.GlobalHub().AddHttp(addr.Address, r)
-	}
+	proxy.ServeHTTP(rw, r)
 }
-
-func (router *Router) NewHttpConn(name string) *httputil.ReverseProxy {
-	val, ok := router.hub.LoadHttp(name)
+func (router *Router) NewHttpProxy(channel string) *httputil.ReverseProxy {
+	val, ok := router.channel.Load(channel)
 	if !ok {
+		router.wsps.Remove(channel)
 		return nil
 	}
-	c, ok := router.http.Load(name)
+	c, ok := router.http.Load(channel)
 	if ok {
 		return c.(*httputil.ReverseProxy)
 	}
-	addr := val.(*msg.WspAddr)
-	log.Printf("start http proxy %s\n", name)
-	target, _ := url.Parse(addr.Domain)
-	p := httputil.NewSingleHostReverseProxy(target)
-	prepare := p.Director
-	p.Director = func(r *http.Request) {
-		prepare(r)
-		prefix := "/" + name
-		r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+	conf := val.(*msg.WspConfig)
+	log.Printf("start http proxy %s\n", channel)
+	u := conf.ReverseUrl()
+	p := httputil.NewSingleHostReverseProxy(u)
+	prefix := "http:path:"
+	if strings.HasPrefix(channel, prefix) {
+		prepare := p.Director
+		path := strings.TrimPrefix(channel, prefix)
+		p.Director = func(r *http.Request) {
+			prepare(r)
+			prefix := "/" + path
+			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+		}
 	}
 	p.Transport = &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			id := ksuid.New().String()
 			writer := router.wan.NewWriter(id)
 			conn := NewProxyConn(writer)
-			router.routing.AddRepeater(id, conn.(pkg.Repeater))
-			err := router.wan.Dail(id, msg.WspType_HTTP, name)
+			router.routing.AddRepeater(id, conn.(proxy.Repeater))
+			err := router.wan.Dail(id, conf)
 			if err != nil {
 				router.routing.Delete(id)
 				return nil, err
 			}
-			response := make(chan byte)
-			router.routing.AddPending(id, &pkg.Pending{OnReponse: func(message *msg.Data) {
-				response <- message.Payload()[0]
+			response := make(chan *msg.WspResponse)
+			router.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, res *msg.WspResponse) {
+				response <- res
 			}})
-			var res byte
+			var res *msg.WspResponse
 			select {
 			case res = <-response:
 			case <-time.After(time.Second * 5):
-				res = 0
+				res = &msg.WspResponse{Code: msg.WspCode_FAILED, Data: "time out"}
 			}
-			if res == 0 {
+			if res.Code == msg.WspCode_FAILED {
 				router.routing.Delete(id)
-				return nil, errors.New("http connect error")
+				return nil, errors.New(res.Data)
 			}
 			return conn, nil
 		},
@@ -88,12 +84,12 @@ func (router *Router) NewHttpConn(name string) *httputil.ReverseProxy {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-	router.http.Store(name, p)
+	router.http.Store(channel, p)
 	return p
 }
 
 func NewProxyConn(writer io.WriteCloser) net.Conn {
-	buff := pkg.BufPool.Get().(*bytes.Buffer)
+	buff := proxy.BufPool.Get().(*bytes.Buffer)
 	return &ProxyConn{input: buff, output: writer, sign: make(chan struct{}, 8)}
 }
 
@@ -161,7 +157,7 @@ func (c *ProxyConn) Close() error {
 	}
 	atomic.AddUint32(&c.closed, 1)
 	c.input.Reset()
-	pkg.BufPool.Put(c.input)
+	proxy.BufPool.Put(c.input)
 	return c.output.Close()
 }
 

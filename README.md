@@ -2,8 +2,14 @@
 
 ![GitHub Workflow Status](https://img.shields.io/github/workflow/status/gowsp/wsp/release)
 ![GitHub release (latest by date)](https://img.shields.io/github/v/release/gowsp/wsp)
+[![Go Report Card](https://goreportcard.com/badge/github.com/gowsp/wsp)](https://goreportcard.com/report/github.com/gowsp/wsp)
 
-Websocket-based socks5 and reverse proxy
+wsp 全称**W**eb**S**ocket **P**roxy 是一种基于 WebSocket 的全方位代理, 仅需要web端口即可提供以下功能：
+
+- 正向代理：支持 socks5，实现突破防火墙的访问
+- 反向代理：支持将NAT或防火墙后面的本地服务器暴露给Internet
+
+wsp为C/S架构，其中 wsps 位于公网提供 WebSocket 服务， wspc 连接 wsps 进行数据转发，以下为简单的结构示意图
 
 ```
   ┌─────────────┐
@@ -26,181 +32,169 @@ Websocket-based socks5 and reverse proxy
   │             │
   └─────────────┘
 ```
-## Example Usage
 
-download the latest programs from [Release page](https://github.com/gowsp/wsp/releases) page according to your operating system and architecture.
+## Wsps
 
-Put `wsps` and `wsps.json` onto your server A with public IP.
-
-Put `wspc` and `wspc.json` onto your server B in LAN (that can't be connected from public Internet).
-
-### socks5 proxy
-
-1. Modify `wsps.json` on server A and set the `port` to be connected to wsp clients:
-
-  ```json
-  {
-      "port": 8000
-  }
-  ```
-
-2. Start `wsps` on server A:
-
-  `./wsps -c ./wsps.json`
-
-3. On server B, modify `wspc.json` to put in your `wsps` server websocket url as `server` field:
-
-  ```json
-  {
-      "server": "ws://x.x.x.x:8000",
-      "socks5": ":1080"
-  }
-  ```
-4. Start `wspc` on server B:
-
-  `./wspc -c ./wspc.json`
-
-5. Now We will forward the socket5 proxy to server A via websocket
-
-### Visit your web service in LAN
-
-We can expose an local web service behind a NAT network to others for testing by using wsp.
-
-1. Modify `wsps.json` on server A and set the `port` to be connected to wsp clients:
-
-  ```json
-  {
-      "port": 8000
-  }
-  ```
-
-2. Start `wsps`:
-
-  `./wsps -c ./wsps.json`
-
-3. Modify `wspc.json` and set `server` to the websocket address of the remote wsps server. The `local_port` is the port of your web service, `name` as a unique identifier will be the prefix for our access to web services, For this example we use `api`: 
-
-  ```json
-  {
-      "auth": "auth",
-      "server": "ws://x.x.x.x:8000",
-      "addrs": [
-          {
-              "forward": "http",
-              "name": "api",
-              "local_addr": "127.0.0.1",
-              "local_port": 8080
-          }
-      ]
-  }
-  ```
-
-4. Start `wspc`:
-
-  `./wspc -c ./wspc.json`
-
-5. Now visit your local web service using url `http://x.x.x.x:8000/api`.
-
-### Access your computer in LAN by SSH
-
-We will place the ssh connection on wsps for access on the other end
-### server
-
-`wsps` config like before
-
-  ```json
-  {
-      "port": 8000
-  }
-  ```
-
-#### local config
-
-The ssh client side we named it `demo`, forward type `local`, the full configuration is as follows
+服务端安装，下载[Release page](https://github.com/gowsp/wsp/releases/latest)的程序，将wsps放置在公网机器，配置用于提供web服务的端口，其最小化配置如下：
 
 ```json
 {
-    "server": "ws://127.0.0.1:8000",
-    "addrs": [
-        {
-            "name": "demo",
-            "forward": "local",
-            "local_addr": "192.168.5.16",
-            "local_port": 22,
-            "secret": "secretdemo"
-        }
+    "port": 8010
+}
+```
+
+启动服务端， `./wsps -c wsps.json`
+
+### Wspc
+
+wspc功能设计参考了ssh，提供以下三种转发模式：
+
+- DynamicForward，动态转发， 提供正向代理如：socks5代理
+- RemoteForward，远程转发，将本地端口连接转发至远端，支持 TCP UDP HTTP HTTPS 协议
+  - HTTP 和 HTTPS 直接注册在wsps的web服务上，支持域名和路径两种方式
+  - TCP UDP 注册在 wsps 后等待其他 wspc 端的接入
+- LocalForward，本地转发，用于本地访问已注册的`远程转发`服务
+
+## DynamicForward
+
+正向代理，动态转发连接请求，配置格式：`protocols://[bind_address]:port`
+
+- `protocols`支持 socks5 代理协议，未来计划支持 HTTP 代理
+- `bind_address`可选，空地址表示监听所有网卡IP
+- `port`本地监听端口
+
+示例如下：
+
+```json
+{
+    "server": "ws://mywsps.com:8010",
+    "dynamic": [
+        "socks5://:1080"
     ]
 }
 ```
 
-Start `wspc`:
+启动wspc， `./wsps -c wsps.json`, 此时本地`1080`即提供socks5代理
 
-  `./wspc -c ./wspc.json`
+## RemoteForward
 
-#### remote config
+远程转发，将本地服务暴露在wsps上，供远程wspc或浏览器访问
 
-Another `wspc` accesses the `demo` with type `remote`, Like the following configuration
+### TCP UDP
+
+配置格式：`protocols://channel[:password]@[bind_address]:port`
+
+- `protocols` 支持 tcp, udp
+- `channel`信道标识，远程wspc需要填相应的channel才能访问
+- `password`可选连接密码，双方的wspc密码需要一致才能通讯
+- `bind_address`监听地址
+- `port`服务端口
+
+该模式主要与`LocalForward`进行配置使用，例子参见`LocalForward`
+
+### HTTP HTTPS
+
+配置格式：`protocols://bind_address:port/[path]?mode=[mode]&value=[value]`
+
+- `protocols` 支持 http, https
+- `bind_address`http服务地址
+- `port`http服务端口
+- `path`可选http服务路径
+- `mode`访问模式，为以下两种
+  - `path` 路径模式
+  - `domain` 域名模式
+
+例：
 
 ```json
 {
-    "server": "ws://127.0.0.1:8000",
-    "addrs": [
-        {
-            "name": "demo",
-            "forward": "remote",
-            "local_addr": "127.0.0.1",
-            "local_port": 9909,
-            "secret": "secretdemo"
-        }
+    "server": "ws://mywsps.com:8010",
+    "remote": [
+        "http://127.0.0.1:8080?mode=path&value=api",
+        "http://127.0.0.1:8080/api?mode=path&value=api",
+        "http://127.0.0.1:8080?mode=domain&value=customwsp.com",
+        "http://127.0.0.1:8080/api?mode=domain&value=customapi.com",
     ]
 }
 ```
 
-Start `wspc`:
+启动wspc， `./wsps -c wsps.json`，此时将在wsps上产生如下映射关系由上至下为
 
-  `./wspc -c ./wspc.json`
+- 访问 http://mywsps.com:8010/api/greet -> http://127.0.0.1:8080/greet
+- 访问 http://mywsps.com:8010/api/greet -> http://127.0.0.1:8080/api/greet
+- 访问 http://customwsp.com:8010/api/greet -> http://127.0.0.1:8080/greet
+- 访问 http://customwsp.com:8010/api/greet -> http://127.0.0.1:8080/api/greet
 
-When we visit `127.0.0.1:9909` is to visit the `192.168.5.16:22`
+## LocalForward
 
-### Enable Authentication
+本地转发，用于本地端口访问远程已注册的`RemoteForward`，配置格式：`protocols://channel[:password]@[bind_address]:port`
 
-Enable authentication by setting auth on the wsps side
+- `protocols` 支持 tcp, udp
+- `channel`信道标识，远程wspc需要填相应的channel才能访问
+- `password`连接密码，双方的wspc密码需要一致才能通讯
+- `bind_address`监听地址
+- `port`本地端口
 
-```json
-{
-    "auth": "auth",
-    "port": 8000
-}
-```
-
-The same requires us to set up authentication on the wspc side as well
-
-```json
-{
-    "auth": "auth",
-    "server": "ws://x.x.x.x:8000",
-    "socks5": ":1080"
-}
-```
-
-### Custom path
-
-We can customize the path of ws
+如一远程wspc开启的ssh远程转发配置如下
 
 ```json
 {
-    "auth": "auth",
-    "path": "/proxy",
-    "port": 8000
+    "server": "ws://mywsps.com:8010",
+    "remote": [
+        "tcp://ssh:ssh@192.168.1.200:22"
+    ]
 }
 ```
 
-The same clients also need to be consistent
+本地进行连接通讯则需要进行如下配置，
 
 ```json
 {
-    "auth": "auth",
-    "server": "ws://x.x.x.x:8000/proxy",
-    "socks5": ":1080"
+    "server": "ws://mywsps.com:8010",
+    "local": [
+        "tcp://ssh:ssh@127.0.0.1:2200"
+    ]
 }
 ```
+
+这样访问`127.0.0.1:2200`即为访问远程`192.168.1.200:22`的ssh服务
+
+## 作为模块引入
+
+wsp在开发时考虑了与现有web服务的协作，支持作为一个功能模块引入
+
+```
+go get -u https://github.com/gowsp/wsp
+```
+
+与官方http集成
+
+```go
+import "github.com/gowsp/wsp/pkg/server"
+
+config := &server.Config{Auth: "auth"}
+
+server.NewWspsWithHandler(config, http.NewServeMux())
+server.NewWspsWithHandler(config, http.DefaultServeMux)
+```
+
+与gin集成
+
+```go
+import "github.com/gowsp/wsp/pkg/server"
+
+config := &server.Config{Auth: "auth"}
+r := gin.Default()
+server.NewWspsWithHandler(config, r)
+```
+
+## TODO
+
+- [ ] DynamicForward支持http代理协议
+- [ ] LocalForward支持动态端口打开
+- [ ] 传输流量加密处理
+- [ ] 支持命令行模式使用
+
+## 反馈建议
+
+目前此项目由我一个人开发，难免会有BUG和功能设计上的缺陷，如有问题请提issues反馈，祝你使用愉快

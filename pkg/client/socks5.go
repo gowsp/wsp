@@ -6,13 +6,23 @@ import (
 	"io"
 	"log"
 	"net"
-	"strconv"
 	"sync"
 
-	"github.com/gowsp/wsp/pkg"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
 )
+
+func (c *Wspc) DynamicForward() {
+	for _, val := range c.Config.Dynamic {
+		conf, err := msg.NewWspConfig(msg.WspType_DYNAMIC, val)
+		if err != nil {
+			log.Println("forward dynamic error,", err)
+			continue
+		}
+		go c.ListenDynamic(conf)
+	}
+}
 
 var socks5 sync.Once
 
@@ -20,9 +30,16 @@ type Socks5Listener struct {
 	c *Wspc
 }
 
-func (c *Wspc) ListenSocks5() {
+func (c *Wspc) ListenDynamic(conf *msg.WspConfig) {
 	socks5.Do(func() {
-		l, err := net.Listen("tcp", c.Config.Socks5)
+		addr := conf.Scheme()
+		if addr != "socks5" {
+			log.Println("Not supported", addr)
+			return
+		}
+		address := conf.Address()
+		log.Println("listen socks5", address)
+		l, err := net.Listen(conf.Network(), address)
 		if err != nil {
 			log.Println(err)
 			return
@@ -51,7 +68,7 @@ func (s *Socks5Listener) process(conn net.Conn) {
 		log.Println("connect error:", err)
 		return
 	}
-	s.c.Socks5Conn(conn, addr)
+	s.c.dynamic(conn, addr)
 }
 
 func (s *Socks5Listener) auth(conn net.Conn) (err error) {
@@ -106,32 +123,33 @@ func (s *Socks5Listener) readAddr(conn net.Conn) (string, error) {
 		return "", err
 	}
 	port := binary.BigEndian.Uint16(portd[:2])
-	return net.JoinHostPort(host, strconv.Itoa(int(port))), nil
+	return net.JoinHostPort(host, fmt.Sprintf("%d", port)), nil
 }
 
-func (c *Wspc) Socks5Conn(conn net.Conn, addr string) {
+func (c *Wspc) dynamic(conn net.Conn, addr string) {
 	log.Println("open proxy", addr)
 	id := ksuid.New().String()
 
-	in := c.wan.NewWriter(id)
-	repeater := pkg.NewNetRepeater(in, conn)
-	c.routing.AddRepeater(id, repeater)
-
-	if err := c.wan.Dail(id, msg.WspType_SOCKS5, addr); err != nil {
-		repeater.Interrupt()
-		c.routing.Delete(id)
-		log.Println(err)
-		return
-	}
-	c.routing.AddPending(id, &pkg.Pending{OnReponse: func(message *msg.Data) {
-		defer c.routing.Delete(id)
-		defer log.Println("close conn", addr)
-		if message.Payload()[0] == 0 {
-			conn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-			repeater.Interrupt()
+	c.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, message *msg.WspResponse) {
+		if message.Code == msg.WspCode_FAILED {
+			conn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+			log.Printf("close socks5 proxy %s, %s\n", addr, message.Data)
+			conn.Close()
 			return
 		}
+		in := c.wan.NewWriter(id)
+		repeater := proxy.NewNetRepeater(in, conn)
+		c.routing.AddRepeater(id, repeater)
+		defer c.routing.Delete(id)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 		repeater.Copy()
+		log.Println("close socks5 proxy", addr)
 	}})
+	config, _ := msg.NewWspConfig(msg.WspType_DYNAMIC, "tcp://"+addr)
+	if err := c.wan.Dail(id, config); err != nil {
+		conn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+		log.Printf("close proxy %s, %s\n", addr, err.Error())
+		c.routing.DeleteConn(id)
+		conn.Close()
+	}
 }
