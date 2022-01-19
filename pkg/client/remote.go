@@ -50,7 +50,13 @@ func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
 	if conf.Paasowrd() != remote.Paasowrd() {
 		return fmt.Errorf("%s password is incorrect", channel)
 	}
-	conn, err := net.DialTimeout(conf.Network(), conf.Address(), 5*time.Second)
+	var err error
+	var conn net.Conn
+	if conf.IsTunnel() {
+		conn, err = net.DialTimeout(remote.Network(), remote.Address(), 5*time.Second)
+	} else {
+		conn, err = net.DialTimeout(conf.Network(), conf.Address(), 5*time.Second)
+	}
 	if err != nil {
 		return err
 	}

@@ -36,8 +36,8 @@ func TestSocks5(t *testing.T) {
 	signal.Notify(c, os.Interrupt)
 	client := client.Wspc{Config: &client.Config{
 		Auth:    "auth",
-		Server:  "ws://127.0.0.1:8080/proxy",
-		Dynamic: []string{"socks5://localhost:1088"},
+		Server:  "wss://app.wuzk.ink:8443/wsp",
+		Dynamic: []string{"socks5://ssh:passwod@127.0.0.1:1088"},
 	}}
 	client.ListenAndServe()
 	<-c

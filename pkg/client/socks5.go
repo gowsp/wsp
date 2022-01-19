@@ -30,18 +30,17 @@ func (c *Wspc) ListenDynamic(conf *msg.WspConfig) {
 	dynamic.Do(func() {
 		switch conf.Scheme() {
 		case "socks5":
-			go c.ServeSocks5Proxy(conf)
+			go c.ListenSocks5Proxy(conf)
 		case "http":
-			go c.ServeHttpProxy(conf)
+			go c.ListenHttpProxy(conf)
 		default:
 			log.Println("Not supported", conf.Scheme())
 			return
 		}
-
 	})
 }
 
-func (c *Wspc) ServeSocks5Proxy(conf *msg.WspConfig) {
+func (c *Wspc) ListenSocks5Proxy(conf *msg.WspConfig) {
 	address := conf.Address()
 	log.Println("listen socks5 proxy", address)
 	l, err := net.Listen(conf.Network(), address)
@@ -55,10 +54,10 @@ func (c *Wspc) ServeSocks5Proxy(conf *msg.WspConfig) {
 			log.Println(err)
 			continue
 		}
-		go c.ServeSocks5Conn(conn)
+		go c.NewSocks5Conn(conf, conn)
 	}
 }
-func (s *Wspc) ServeSocks5Conn(conn net.Conn) {
+func (s *Wspc) NewSocks5Conn(conf *msg.WspConfig, conn net.Conn) {
 	if err := s.auth(conn); err != nil {
 		conn.Close()
 		log.Println("auth error:", err)
@@ -70,7 +69,8 @@ func (s *Wspc) ServeSocks5Conn(conn net.Conn) {
 		log.Println("connect error:", err)
 		return
 	}
-	s.dynamic(conn, addr)
+	connConf := conf.DynamicAddr(addr)
+	s.dynamic(connConf, conn)
 }
 
 func (s *Wspc) auth(conn net.Conn) (err error) {
@@ -128,8 +128,9 @@ func (s *Wspc) readSocks5Addr(conn net.Conn) (string, error) {
 	return net.JoinHostPort(host, fmt.Sprintf("%d", port)), nil
 }
 
-func (c *Wspc) dynamic(conn net.Conn, addr string) {
-	log.Println("open proxy", addr)
+func (c *Wspc) dynamic(conf *msg.WspConfig, conn net.Conn) {
+	addr := conf.Address()
+	log.Println("open socks5 proxy", addr)
 	id := ksuid.New().String()
 
 	c.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, message *msg.WspResponse) {
@@ -147,10 +148,9 @@ func (c *Wspc) dynamic(conn net.Conn, addr string) {
 		repeater.Copy()
 		log.Println("close socks5 proxy", addr)
 	}})
-	config, _ := msg.NewWspConfig(msg.WspType_DYNAMIC, "tcp://"+addr)
-	if err := c.wan.Dail(id, config); err != nil {
+	if err := c.wan.Dail(id, conf); err != nil {
 		conn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-		log.Printf("close proxy %s, %s\n", addr, err.Error())
+		log.Printf("close socks5 proxy %s, %s\n", addr, err.Error())
 		c.routing.DeleteConn(id)
 		conn.Close()
 	}

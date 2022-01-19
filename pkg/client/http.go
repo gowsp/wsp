@@ -13,7 +13,7 @@ import (
 	"github.com/segmentio/ksuid"
 )
 
-func (c *Wspc) ServeHttpProxy(conf *msg.WspConfig) {
+func (c *Wspc) ListenHttpProxy(conf *msg.WspConfig) {
 	address := conf.Address()
 	log.Println("listen http proxy", address)
 	l, err := net.Listen(conf.Network(), address)
@@ -27,10 +27,10 @@ func (c *Wspc) ServeHttpProxy(conf *msg.WspConfig) {
 			log.Println(err)
 			continue
 		}
-		go c.ServeHttpProxyConn(conf, conn)
+		go c.NewHttpProxyConn(conf, conn)
 	}
 }
-func (c *Wspc) ServeHttpProxyConn(conf *msg.WspConfig, conn net.Conn) {
+func (c *Wspc) NewHttpProxyConn(conf *msg.WspConfig, conn net.Conn) {
 	buffer := proxy.GetBuffer()
 	reader := bufio.NewReader(io.TeeReader(conn, buffer))
 	reqeust, err := http.ReadRequest(reader)
@@ -67,7 +67,7 @@ func (c *Wspc) ServeHttpProxyConn(conf *msg.WspConfig, conn net.Conn) {
 		repeater.Copy()
 		log.Println("close http proxy", addr)
 	}})
-	config, _ := msg.NewWspConfig(msg.WspType_DYNAMIC, "tcp://"+addr)
+	config := conf.DynamicAddr(addr)
 	if err := c.wan.Dail(id, config); err != nil {
 		proxy.PutBuffer(buffer)
 		conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))

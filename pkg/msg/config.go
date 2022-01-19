@@ -35,6 +35,9 @@ func (c *WspConfig) IsHttp() bool {
 	}
 	return false
 }
+func (c *WspConfig) IsTunnel() bool {
+	return c.url.Scheme == "tunnel"
+}
 func (c *WspConfig) Channel() string {
 	if c.IsHttp() {
 		return "http:" + c.Mode() + ":" + c.Value()
@@ -61,6 +64,22 @@ func (c *WspConfig) Paasowrd() string {
 	pwd, _ := c.url.User.Password()
 	return pwd
 }
+func (c *WspConfig) DynamicAddr(addr string) *WspConfig {
+	wspType := c.wspType
+	if c.url.User != nil {
+		wspType = WspType_LOCAL
+	}
+	return &WspConfig{
+		wspType: wspType,
+		url: &url.URL{
+			Scheme:   c.url.Scheme,
+			Host:     addr,
+			User:     c.url.User,
+			RawQuery: c.url.RawQuery,
+		},
+	}
+}
+
 func (c *WspConfig) ReverseUrl() *url.URL {
 	return &url.URL{
 		Scheme: c.url.Scheme,
