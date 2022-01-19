@@ -44,6 +44,23 @@ func TestSocks5(t *testing.T) {
 	log.Println("closed")
 }
 
+func TestHttpProxy(t *testing.T) {
+	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
+	go http.ListenAndServe(":8080", wsps)
+	time.Sleep(1 * time.Second)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	client := client.Wspc{Config: &client.Config{
+		Auth:    "auth",
+		Server:  "ws://127.0.0.1:8080/proxy",
+		Dynamic: []string{"http://:1088"},
+	}}
+	client.ListenAndServe()
+	<-c
+	log.Println("closed")
+}
+
 func TestProxy(t *testing.T) {
 	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
 	go http.ListenAndServe(":8080", wsps)

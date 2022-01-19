@@ -89,7 +89,7 @@ func (router *Router) NewHttpProxy(channel string) *httputil.ReverseProxy {
 }
 
 func NewProxyConn(writer io.WriteCloser) net.Conn {
-	buff := proxy.BufPool.Get().(*bytes.Buffer)
+	buff := proxy.GetBuffer()
 	return &ProxyConn{input: buff, output: writer, sign: make(chan struct{}, 8)}
 }
 
@@ -157,7 +157,7 @@ func (c *ProxyConn) Close() error {
 	}
 	atomic.AddUint32(&c.closed, 1)
 	c.input.Reset()
-	proxy.BufPool.Put(c.input)
+	proxy.PutBuffer(c.input)
 	return c.output.Close()
 }
 

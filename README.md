@@ -190,7 +190,7 @@ server.NewWspsWithHandler(config, r)
 
 ## TODO
 
-- [ ] DynamicForward支持http代理协议
+- [x] DynamicForward支持http代理协议
 - [ ] LocalForward支持动态端口打开
 - [ ] 传输流量加密处理
 - [ ] 支持命令行模式使用

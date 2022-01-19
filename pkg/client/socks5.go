@@ -20,58 +20,60 @@ func (c *Wspc) DynamicForward() {
 			log.Println("forward dynamic error,", err)
 			continue
 		}
-		go c.ListenDynamic(conf)
+		c.ListenDynamic(conf)
 	}
 }
 
-var socks5 sync.Once
-
-type Socks5Listener struct {
-	c *Wspc
-}
+var dynamic sync.Once
 
 func (c *Wspc) ListenDynamic(conf *msg.WspConfig) {
-	socks5.Do(func() {
-		addr := conf.Scheme()
-		if addr != "socks5" {
-			log.Println("Not supported", addr)
+	dynamic.Do(func() {
+		switch conf.Scheme() {
+		case "socks5":
+			go c.ServeSocks5Proxy(conf)
+		case "http":
+			go c.ServeHttpProxy(conf)
+		default:
+			log.Println("Not supported", conf.Scheme())
 			return
 		}
-		address := conf.Address()
-		log.Println("listen socks5", address)
-		l, err := net.Listen(conf.Network(), address)
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		socks5 := Socks5Listener{c}
-		for {
-			conn, err := l.Accept()
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			socks5.process(conn)
-		}
+
 	})
 }
 
-func (s *Socks5Listener) process(conn net.Conn) {
+func (c *Wspc) ServeSocks5Proxy(conf *msg.WspConfig) {
+	address := conf.Address()
+	log.Println("listen socks5 proxy", address)
+	l, err := net.Listen(conf.Network(), address)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			log.Println(err)
+			continue
+		}
+		go c.ServeSocks5Conn(conn)
+	}
+}
+func (s *Wspc) ServeSocks5Conn(conn net.Conn) {
 	if err := s.auth(conn); err != nil {
 		conn.Close()
 		log.Println("auth error:", err)
 		return
 	}
-	addr, err := s.readAddr(conn)
+	addr, err := s.readSocks5Addr(conn)
 	if err != nil {
 		conn.Close()
 		log.Println("connect error:", err)
 		return
 	}
-	s.c.dynamic(conn, addr)
+	s.dynamic(conn, addr)
 }
 
-func (s *Socks5Listener) auth(conn net.Conn) (err error) {
+func (s *Wspc) auth(conn net.Conn) (err error) {
 	header := make([]byte, 3)
 	if _, err := io.ReadAtLeast(conn, header, 3); err != nil {
 		return fmt.Errorf("failed to get command version: %v", err)
@@ -80,7 +82,7 @@ func (s *Socks5Listener) auth(conn net.Conn) (err error) {
 	return err
 }
 
-func (s *Socks5Listener) readAddr(conn net.Conn) (string, error) {
+func (s *Wspc) readSocks5Addr(conn net.Conn) (string, error) {
 	header := make([]byte, 4)
 	if _, err := io.ReadAtLeast(conn, header, 4); err != nil {
 		return "", fmt.Errorf("failed to get version: %v", err)

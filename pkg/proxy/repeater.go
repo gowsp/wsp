@@ -26,8 +26,8 @@ type NetRepeater struct {
 }
 
 func (r *NetRepeater) Copy() error {
-	buf := bufPool.Get().(*[]byte)
-	defer bufPool.Put(buf)
+	buf := bytePool.Get().(*[]byte)
+	defer bytePool.Put(buf)
 
 	_, err := io.CopyBuffer(r.wan, r.conn, *buf)
 	if r.IsClosed() {
