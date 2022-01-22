@@ -39,8 +39,8 @@ func (s *Routing) Delete(id string) {
 func (s *Routing) Routing(data *msg.Data) error {
 	switch data.Msg.Cmd {
 	case msg.WspCmd_RESPOND:
-		if val, ok := s.connect.Load(data.Id()); ok {
-			s.connect.Delete(data.Id())
+		if val, ok := s.connect.Load(data.ID()); ok {
+			s.connect.Delete(data.ID())
 			var response msg.WspResponse
 			proto.Unmarshal(data.Payload(), &response)
 			go val.(*Pending).OnReponse(data, &response)
@@ -48,14 +48,14 @@ func (s *Routing) Routing(data *msg.Data) error {
 		}
 		return ErrConnNotExist
 	case msg.WspCmd_TRANSFER:
-		if val, ok := s.accept.Load(data.Id()); ok {
+		if val, ok := s.accept.Load(data.ID()); ok {
 			val.(Repeater).Relay(data)
 			return nil
 		}
 		return ErrConnNotExist
 	case msg.WspCmd_INTERRUPT:
-		if val, ok := s.accept.Load(data.Id()); ok {
-			s.accept.Delete(data.Id())
+		if val, ok := s.accept.Load(data.ID()); ok {
+			s.accept.Delete(data.ID())
 			val.(Repeater).Interrupt()
 		}
 	}

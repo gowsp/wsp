@@ -61,6 +61,23 @@ func TestHttpProxy(t *testing.T) {
 	log.Println("closed")
 }
 
+func TestTCPOverHTTPProxy(t *testing.T) {
+	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
+	go http.ListenAndServe(":8080", wsps)
+	time.Sleep(1 * time.Second)
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	client := client.Wspc{Config: &client.Config{
+		Auth:   "auth",
+		Server: "ws://127.0.0.1:8080/proxy",
+		Remote: []string{"tcp://10.0.0.4:5900?mode=path&value=vnc"},
+	}}
+	client.ListenAndServe()
+	<-c
+	log.Println("closed")
+}
+
 func TestProxy(t *testing.T) {
 	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
 	go http.ListenAndServe(":8080", wsps)

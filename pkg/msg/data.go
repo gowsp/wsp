@@ -1,3 +1,4 @@
+//Package msg is Data transferred before client and server
 package msg
 
 type Data struct {
@@ -5,7 +6,7 @@ type Data struct {
 	Raw *[]byte
 }
 
-func (data *Data) Id() string {
+func (data *Data) ID() string {
 	return data.Msg.Id
 }
 func (data *Data) Cmd() WspCmd {

@@ -17,29 +17,71 @@ import (
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
+	"nhooyr.io/websocket"
 )
 
-func (router *Router) ServeHTTP(channel string, rw http.ResponseWriter, r *http.Request) {
-	proxy := router.NewHttpProxy(channel)
-	if proxy == nil {
+func (r *Router) ServeHTTP(channel string, rw http.ResponseWriter, req *http.Request) {
+	val, ok := r.channel.Load(channel)
+	if !ok {
+		r.wsps.Remove(channel)
 		http.Error(rw, "router not exist", 404)
 		return
 	}
-	proxy.ServeHTTP(rw, r)
-}
-func (router *Router) NewHttpProxy(channel string) *httputil.ReverseProxy {
-	val, ok := router.channel.Load(channel)
-	if !ok {
-		router.wsps.Remove(channel)
-		return nil
+	conf := val.(*msg.WspConfig)
+	if conf.IsHTTP() {
+		r.ServeHTTPProxy(conf, rw, req)
+	} else {
+		r.ServeNetProxy(conf, rw, req)
 	}
-	c, ok := router.http.Load(channel)
+}
+func (r *Router) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
+	id := ksuid.New().String()
+	response := make(chan *msg.WspResponse)
+	r.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, res *msg.WspResponse) {
+		response <- res
+	}})
+	if err := r.wan.Dail(id, conf); err != nil {
+		http.Error(w, "router dail error", 500)
+		r.routing.DeleteConn(id)
+		return
+	}
+	var res *msg.WspResponse
+	select {
+	case res = <-response:
+	case <-time.After(time.Second * 5):
+		res = &msg.WspResponse{Code: msg.WspCode_FAILED, Data: "time out"}
+	}
+	if res.Code == msg.WspCode_FAILED {
+		r.routing.Delete(id)
+		http.Error(w, "router not avaiable", 400)
+		return
+	}
+	ws, err := websocket.Accept(w, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
+	if err != nil {
+		log.Printf("websocket accept %v", err)
+		return
+	}
+	writer := r.wan.NewWriter(id)
+	conn := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
+	repeater := proxy.NewNetRepeater(writer, conn)
+	r.routing.AddRepeater(id, repeater)
+	repeater.Copy()
+}
+func (r *Router) ServeHTTPProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
+	proxy := r.NewHTTPProxy(conf)
+	if proxy == nil {
+		return
+	}
+	proxy.ServeHTTP(w, req)
+}
+func (r *Router) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
+	channel := conf.Channel()
+	c, ok := r.http.Load(channel)
 	if ok {
 		return c.(*httputil.ReverseProxy)
 	}
-	conf := val.(*msg.WspConfig)
 	log.Printf("start http proxy %s\n", channel)
-	u := conf.ReverseUrl()
+	u := conf.ReverseURL()
 	p := httputil.NewSingleHostReverseProxy(u)
 	prefix := "http:path:"
 	if strings.HasPrefix(channel, prefix) {
@@ -54,16 +96,16 @@ func (router *Router) NewHttpProxy(channel string) *httputil.ReverseProxy {
 	p.Transport = &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			id := ksuid.New().String()
-			writer := router.wan.NewWriter(id)
+			writer := r.wan.NewWriter(id)
 			conn := NewProxyConn(writer)
-			router.routing.AddRepeater(id, conn.(proxy.Repeater))
-			err := router.wan.Dail(id, conf)
+			r.routing.AddRepeater(id, conn.(proxy.Repeater))
+			err := r.wan.Dail(id, conf)
 			if err != nil {
-				router.routing.Delete(id)
+				r.routing.Delete(id)
 				return nil, err
 			}
 			response := make(chan *msg.WspResponse)
-			router.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, res *msg.WspResponse) {
+			r.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, res *msg.WspResponse) {
 				response <- res
 			}})
 			var res *msg.WspResponse
@@ -73,7 +115,7 @@ func (router *Router) NewHttpProxy(channel string) *httputil.ReverseProxy {
 				res = &msg.WspResponse{Code: msg.WspCode_FAILED, Data: "time out"}
 			}
 			if res.Code == msg.WspCode_FAILED {
-				router.routing.Delete(id)
+				r.routing.Delete(id)
 				return nil, errors.New(res.Data)
 			}
 			return conn, nil
@@ -84,7 +126,7 @@ func (router *Router) NewHttpProxy(channel string) *httputil.ReverseProxy {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 	}
-	router.http.Store(channel, p)
+	r.http.Store(channel, p)
 	return p
 }
 

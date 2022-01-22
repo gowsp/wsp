@@ -28,7 +28,7 @@ type WspConfig struct {
 func (c *WspConfig) ToReqeust() *WspRequest {
 	return &WspRequest{Type: c.wspType, Data: c.url.String()}
 }
-func (c *WspConfig) IsHttp() bool {
+func (c *WspConfig) IsHTTP() bool {
 	switch c.url.Scheme {
 	case "http", "https":
 		return true
@@ -39,10 +39,14 @@ func (c *WspConfig) IsTunnel() bool {
 	return c.url.Scheme == "tunnel"
 }
 func (c *WspConfig) Channel() string {
-	if c.IsHttp() {
+	if c.IsHTTP() {
 		return "http:" + c.Mode() + ":" + c.Value()
 	}
-	return c.url.User.Username()
+	mode := c.Mode()
+	if mode == "" {
+		return c.url.User.Username()
+	}
+	return "http:" + c.Mode() + ":" + c.Value()
 }
 func (c *WspConfig) Scheme() string {
 	return c.url.Scheme
@@ -80,7 +84,7 @@ func (c *WspConfig) DynamicAddr(addr string) *WspConfig {
 	}
 }
 
-func (c *WspConfig) ReverseUrl() *url.URL {
+func (c *WspConfig) ReverseURL() *url.URL {
 	return &url.URL{
 		Scheme: c.url.Scheme,
 		Host:   c.url.Host,

@@ -94,13 +94,13 @@ func (c *Wspc) process(message *msg.Data) {
 		go func() {
 			err := c.NewConn(message.Msg)
 			if err != nil {
-				c.wan.ReplyMessage(message.Id(), false, err.Error())
+				c.wan.ReplyMessage(message.ID(), false, err.Error())
 			}
 		}()
 	default:
 		err := c.routing.Routing(message)
 		if errors.Is(err, proxy.ErrConnNotExist) {
-			c.wan.CloseRemote(message.Id(), err.Error())
+			c.wan.CloseRemote(message.ID(), err.Error())
 		}
 	}
 }

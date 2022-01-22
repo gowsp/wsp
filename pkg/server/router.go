@@ -20,9 +20,9 @@ type Router struct {
 	routing *proxy.Routing
 }
 
-func (wsps *Wsps) NewRouter(ws *websocket.Conn) *Router {
+func (s *Wsps) NewRouter(ws *websocket.Conn) *Router {
 	wan := proxy.NewWan(ws)
-	return &Router{wsps: wsps, wan: wan, routing: proxy.NewRouting()}
+	return &Router{wsps: s, wan: wan, routing: proxy.NewRouting()}
 }
 
 func (r *Router) GlobalConfig() *Config {
@@ -54,12 +54,12 @@ func (r *Router) process(data *msg.Data) {
 	case msg.WspCmd_CONNECT:
 		err := r.NewConn(data.Msg)
 		if err != nil {
-			r.wan.ReplyMessage(data.Id(), false, err.Error())
+			r.wan.ReplyMessage(data.ID(), false, err.Error())
 		}
 	default:
 		err := r.routing.Routing(data)
 		if errors.Is(err, proxy.ErrConnNotExist) {
-			r.wan.CloseRemote(data.Id(), err.Error())
+			r.wan.CloseRemote(data.ID(), err.Error())
 		}
 	}
 }
@@ -79,39 +79,10 @@ func (r *Router) NewConn(message *msg.WspMessage) error {
 		go r.NewDynamic(message.Id, conf)
 		return nil
 	case msg.WspType_LOCAL:
-		return r.NewLocal(message.Id, conf)
+		return r.NewRemoteConn(message.Id, conf)
 	case msg.WspType_REMOTE:
 		return r.AddRemote(message.Id, conf)
 	default:
 		return fmt.Errorf("unknown %v", req.Type)
 	}
-}
-
-func (r *Router) AddRemote(id string, conf *msg.WspConfig) error {
-	channel := conf.Channel()
-	if r.wsps.Exist(channel) {
-		return fmt.Errorf("channel %s already registered", conf.Channel())
-	}
-	if conf.IsHttp() {
-		switch conf.Mode() {
-		case "path":
-			if conf.Value() == r.GlobalConfig().Path {
-				return fmt.Errorf("setting the same path as wsps is not allowed")
-			}
-		case "domain":
-			switch {
-			case r.GlobalConfig().Host == "":
-				return fmt.Errorf("wsps does not set host, domain method is not allowed")
-			case r.GlobalConfig().Host == conf.Value():
-				return fmt.Errorf("setting the same domain as wsps is not allowed")
-			}
-		default:
-			return fmt.Errorf("unsupported http mode %s", conf.Mode())
-		}
-	}
-	log.Println("register channel", channel)
-	r.wan.Reply(id, true)
-	r.wsps.Store(channel, r)
-	r.channel.Store(channel, conf)
-	return nil
 }

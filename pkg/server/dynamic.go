@@ -9,23 +9,24 @@ import (
 	"github.com/gowsp/wsp/pkg/proxy"
 )
 
-func (p *Router) NewDynamic(id string, conf *msg.WspConfig) {
+func (r *Router) NewDynamic(id string, conf *msg.WspConfig) {
 	addr := conf.Address()
 	log.Println("open proxy", addr)
 
 	conn, err := net.DialTimeout(conf.Network(), addr, 5*time.Second)
 	if err != nil {
-		p.wan.ReplyMessage(id, false, err.Error())
+		r.wan.ReplyMessage(id, false, err.Error())
 		return
 	}
 
-	in := p.wan.NewWriter(id)
+	in := r.wan.NewWriter(id)
 	repeater := proxy.NewNetRepeater(in, conn)
-	p.routing.AddRepeater(id, repeater)
-	defer p.routing.Delete(id)
+	r.routing.AddRepeater(id, repeater)
+	defer r.routing.Delete(id)
 
-	if err = p.wan.Reply(id, true); err != nil {
+	if err = r.wan.Reply(id, true); err != nil {
 		log.Println(err)
+		conn.Close()
 		return
 	}
 	repeater.Copy()

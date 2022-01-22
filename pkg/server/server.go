@@ -1,3 +1,4 @@
+// Package server is core logic shared by wspc wsps
 package server
 
 import (

@@ -69,7 +69,7 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
 {
     "server": "ws://mywsps.com:8010",
     "dynamic": [
-        "http://:80"，
+        "http://:80",
         "socks5://:1080"
     ]
 }
@@ -208,6 +208,30 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
 
 在`DynamicForward`端用socket5代理的连接和流量都会转发到`RemoteForward`端，如socket5代理下，访问`192.168.1.200:22`即访问`RemoteForward`端的`192.168.1.200:22`
 
+## TCP UDP && websocket
+
+某些场景下希望将TCP或者UDP的流量通过websocket进行转发，配置格式：`protocols://bind_address:port?mode=[mode]&value=[value]`
+
+- `protocols` 支持 tcp, udp
+- `bind_address`服务IP地址
+- `port`服务端口
+- `mode`访问模式，为以下两种
+  - `path` 路径模式
+  - `domain` 域名模式
+
+例转发vnc远程服务到websocket，我们配置如下：
+
+```json
+{
+    "server": "ws://mywsps.com:8010",
+    "remote": [
+        "tcp://127.0.0.1:5900?mode=path&value=vnc"
+    ]
+}
+```
+
+这时我们可以打开[novpc](https://novnc.com/noVNC/vnc.html), 修改配置，修改为暴露的vnc服务参数，即可实现vnc的远程访问
+
 ## 作为模块引入
 
 wsp在开发时考虑了与现有web服务的协作，支持作为一个功能模块引入
@@ -239,13 +263,9 @@ server.NewWspsWithHandler(config, r)
 
 ## TODO
 
-- [x] DynamicForward支持http代理协议
-- [x] DynamicForward支持远端动态连接
-- [ ] TCP UDP支持ws直接暴露
 - [ ] 消息处理事件驱动设计
-- [ ] 传输流量加密处理
 - [ ] 支持命令行模式使用
 
 ## 反馈建议
 
-目前此项目为个人独立开发，难免会有BUG和功能设计上的缺陷，如有问题请提issues反馈，祝你使用愉快
+目前此项目为个人独立开发，难免会有BUG和功能设计上的缺陷，如有问题请提issues反馈，也欢迎参与代码或文档的贡献，祝使用愉快

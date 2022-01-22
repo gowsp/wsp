@@ -1,3 +1,4 @@
+// Package proxy is core logic shared by client and server
 package proxy
 
 import (
@@ -70,7 +71,6 @@ func NewWsRepeater(id string, output io.Writer) Repeater {
 
 type WsRepeater struct {
 	id     string
-	input  io.Writer
 	output io.Writer
 }
 
