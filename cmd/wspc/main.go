@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"io"
@@ -17,12 +18,12 @@ func main() {
 		log.Println(err)
 		return
 	}
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
 	client := client.Wspc{Config: config}
 	go client.ListenAndServe()
-	<-c
+	<-ctx.Done()
+	client.Close()
 	log.Println("wspc closed")
 }
 

@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gowsp/wsp/pkg/msg"
@@ -29,6 +30,7 @@ type Wspc struct {
 	channel sync.Map
 	routing *proxy.Routing
 	wan     *proxy.Wan
+	closed  uint32
 }
 
 func (c *Wspc) connectWs() error {
@@ -50,6 +52,7 @@ func (c *Wspc) connectWs() error {
 }
 
 func (c *Wspc) Close() {
+	atomic.AddUint32(&c.closed, 1)
 	c.routing.Close()
 	c.wan.Close()
 }
@@ -89,6 +92,9 @@ func (c *Wspc) start() {
 	c.retry()
 }
 func (c *Wspc) retry() {
+	if atomic.LoadUint32(&c.closed) > 0 {
+		return
+	}
 	log.Println("reconnect server ...")
 	time.Sleep(3 * time.Second)
 	c.ListenAndServe()

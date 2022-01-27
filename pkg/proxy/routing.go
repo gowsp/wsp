@@ -61,3 +61,10 @@ func (s *Routing) Routing(data *msg.Data) error {
 	}
 	return nil
 }
+func (s *Routing) Close() error {
+	s.connect.Range(func(key, value interface{}) bool {
+		value.(Repeater).Close()
+		return true
+	})
+	return nil
+}
