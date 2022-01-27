@@ -27,7 +27,23 @@ func TestShutdown(t *testing.T) {
 	log.Println("Server exiting")
 }
 
-func TestSocks5(t *testing.T) {
+func TestServer(t *testing.T) {
+	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
+	http.ListenAndServe(":8080", wsps)
+}
+func TestClient(t *testing.T) {
+	client := client.Wspc{Config: &client.Config{
+		Auth:    "auth",
+		Server:  "ws://127.0.0.1:8080/proxy",
+		Dynamic: []string{"socks5://ssh:passwod@127.0.0.1:1088"},
+		Remote: []string{
+			"tcp://ssh:ssh@192.168.1.200:22",
+			"tcp://rdp:rdp@192.168.1.200:3389",
+		},
+	}}
+	client.ListenAndServe()
+}
+func TestSocks5Proxy(t *testing.T) {
 	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
 	go http.ListenAndServe(":8080", wsps)
 	time.Sleep(1 * time.Second)
@@ -36,15 +52,15 @@ func TestSocks5(t *testing.T) {
 	signal.Notify(c, os.Interrupt)
 	client := client.Wspc{Config: &client.Config{
 		Auth:    "auth",
-		Server:  "wss://app.wuzk.ink:8443/wsp",
-		Dynamic: []string{"socks5://ssh:passwod@127.0.0.1:1088"},
+		Server:  "ws://127.0.0.1:8080/proxy",
+		Dynamic: []string{"socks5://:1088"},
 	}}
 	client.ListenAndServe()
 	<-c
 	log.Println("closed")
 }
 
-func TestHttpProxy(t *testing.T) {
+func TestHTTPProxy(t *testing.T) {
 	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
 	go http.ListenAndServe(":8080", wsps)
 	time.Sleep(1 * time.Second)

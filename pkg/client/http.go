@@ -13,10 +13,16 @@ import (
 	"github.com/segmentio/ksuid"
 )
 
-func (c *Wspc) ListenHttpProxy(conf *msg.WspConfig) {
-	address := conf.Address()
+// HTTPProxy implement DynamicProxy
+type HTTPProxy struct {
+	conf *msg.WspConfig
+	wspc *Wspc
+}
+
+func (p *HTTPProxy) Listen() {
+	address := p.conf.Address()
 	log.Println("listen http proxy", address)
-	l, err := net.Listen(conf.Network(), address)
+	l, err := net.Listen(p.conf.Network(), address)
 	if err != nil {
 		log.Println(err)
 		return
@@ -27,10 +33,11 @@ func (c *Wspc) ListenHttpProxy(conf *msg.WspConfig) {
 			log.Println(err)
 			continue
 		}
-		go c.NewHttpProxyConn(conf, conn)
+		go p.ServeConn(conn)
 	}
 }
-func (c *Wspc) NewHttpProxyConn(conf *msg.WspConfig, conn net.Conn) {
+func (p *HTTPProxy) ServeConn(conn net.Conn) {
+	c := p.wspc
 	buffer := proxy.GetBuffer()
 	reader := bufio.NewReader(io.TeeReader(conn, buffer))
 	reqeust, err := http.ReadRequest(reader)
@@ -67,7 +74,7 @@ func (c *Wspc) NewHttpProxyConn(conf *msg.WspConfig, conn net.Conn) {
 		repeater.Copy()
 		log.Println("close http proxy", addr)
 	}})
-	config := conf.DynamicAddr(addr)
+	config := p.conf.DynamicAddr(addr)
 	if err := c.wan.Dail(id, config); err != nil {
 		proxy.PutBuffer(buffer)
 		conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))

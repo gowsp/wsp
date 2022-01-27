@@ -1,49 +1,28 @@
 package client
 
 import (
+	"bufio"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"net"
-	"sync"
 
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
 )
 
-func (c *Wspc) DynamicForward() {
-	for _, val := range c.Config.Dynamic {
-		conf, err := msg.NewWspConfig(msg.WspType_DYNAMIC, val)
-		if err != nil {
-			log.Println("forward dynamic error,", err)
-			continue
-		}
-		c.ListenDynamic(conf)
-	}
+// Socks5Proxy implement DynamicProxy
+type Socks5Proxy struct {
+	conf *msg.WspConfig
+	wspc *Wspc
 }
 
-var dynamic sync.Once
-
-func (c *Wspc) ListenDynamic(conf *msg.WspConfig) {
-	dynamic.Do(func() {
-		switch conf.Scheme() {
-		case "socks5":
-			go c.ListenSocks5Proxy(conf)
-		case "http":
-			go c.ListenHttpProxy(conf)
-		default:
-			log.Println("Not supported", conf.Scheme())
-			return
-		}
-	})
-}
-
-func (c *Wspc) ListenSocks5Proxy(conf *msg.WspConfig) {
-	address := conf.Address()
+func (p *Socks5Proxy) Listen() {
+	address := p.conf.Address()
 	log.Println("listen socks5 proxy", address)
-	l, err := net.Listen(conf.Network(), address)
+	l, err := net.Listen(p.conf.Network(), address)
 	if err != nil {
 		log.Println(err)
 		return
@@ -54,65 +33,99 @@ func (c *Wspc) ListenSocks5Proxy(conf *msg.WspConfig) {
 			log.Println(err)
 			continue
 		}
-		go c.NewSocks5Conn(conf, conn)
+		go p.ServeConn(conn)
 	}
 }
-func (s *Wspc) NewSocks5Conn(conf *msg.WspConfig, conn net.Conn) {
-	if err := s.auth(conn); err != nil {
+
+func (p *Socks5Proxy) ServeConn(conn net.Conn) {
+	reader := bufio.NewReader(conn)
+	if err := p.auth(reader, conn); err != nil {
 		conn.Close()
 		log.Println("auth error:", err)
 		return
 	}
-	addr, err := s.readSocks5Addr(conn)
+	addr, err := p.readRequest(reader)
 	if err != nil {
 		conn.Close()
 		log.Println("connect error:", err)
 		return
 	}
-	connConf := conf.DynamicAddr(addr)
-	s.dynamic(connConf, conn)
+	p.replies(addr, reader, conn)
 }
 
-func (s *Wspc) auth(conn net.Conn) (err error) {
-	header := make([]byte, 3)
-	if _, err := io.ReadAtLeast(conn, header, 3); err != nil {
-		return fmt.Errorf("failed to get command version: %v", err)
+func (p *Socks5Proxy) checkVer(reader *bufio.Reader) error {
+	ver, err := reader.ReadByte()
+	if err != nil {
+		return err
 	}
-	_, err = conn.Write([]byte{0x05, 0x00})
-	return err
+	if ver != 0x05 {
+		return fmt.Errorf("unsupported socks version %d", ver)
+	}
+	return nil
+}
+func (p *Socks5Proxy) auth(reader *bufio.Reader, writer io.Writer) error {
+	// +----+----------+----------+
+	// |VER | NMETHODS | METHODS  |
+	// +----+----------+----------+
+	// | 1  |    1     | 1 to 255 |
+	// +----+----------+----------+
+	if err := p.checkVer(reader); err != nil {
+		return err
+	}
+	nmethods, err := reader.ReadByte()
+	if err != nil {
+		return err
+	}
+	methods := make([]byte, nmethods)
+	_, err = io.ReadFull(reader, methods)
+	if err != nil {
+		return err
+	}
+	// +----+--------+
+	// |VER | METHOD |
+	// +----+--------+
+	// | 1  |   1    |
+	// +----+--------+
+	_, err = writer.Write([]byte{0x05, 0x00})
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
-func (s *Wspc) readSocks5Addr(conn net.Conn) (string, error) {
-	header := make([]byte, 4)
-	if _, err := io.ReadAtLeast(conn, header, 4); err != nil {
-		return "", fmt.Errorf("failed to get version: %v", err)
+func (p *Socks5Proxy) readRequest(conn *bufio.Reader) (addr string, err error) {
+	// +----+-----+-------+------+----------+----------+
+	// |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+	// +----+-----+-------+------+----------+----------+
+	// | 1  |  1  | X'00' |  1   | Variable |    2     |
+	// +----+-----+-------+------+----------+----------+
+	if err = p.checkVer(conn); err != nil {
+		return "", err
 	}
-	if header[0] != 5 {
-		return "", fmt.Errorf("unsupported version: %d", header[0])
+	buf := make([]byte, 3)
+	if _, err = io.ReadFull(conn, buf); err != nil {
+		return "", err
 	}
-
 	var host string
-	addrType := header[3]
+	addrType := buf[2]
 	switch addrType {
 	case 1:
-		addr := header
-		if _, err := conn.Read(addr); err != nil {
+		host, err = p.readIP(conn, net.IPv4len)
+		if err != nil {
 			return "", err
 		}
-		host = net.IP(addr).String()
 	case 4:
-		addr := make([]byte, 16)
-		if _, err := conn.Read(addr); err != nil {
+		host, err = p.readIP(conn, net.IPv6len)
+		if err != nil {
 			return "", err
 		}
-		host = net.IP(addr).String()
 	case 3:
-		addrLen := []byte{0}
-		if _, err := conn.Read(addrLen); err != nil {
+		addrLen, err := conn.ReadByte()
+		if err != nil {
 			return "", err
 		}
-		hostName := make([]byte, int(addrLen[0]))
-		if _, err := conn.Read(hostName); err != nil {
+		hostName := make([]byte, addrLen)
+		if _, err := io.ReadFull(conn, hostName); err != nil {
 			return "", err
 		}
 		host = string(hostName)
@@ -121,15 +134,27 @@ func (s *Wspc) readSocks5Addr(conn net.Conn) (string, error) {
 	}
 
 	portd := []byte{0, 0}
-	if _, err := conn.Read(portd); err != nil {
+	if _, err := io.ReadFull(conn, portd); err != nil {
 		return "", err
 	}
-	port := binary.BigEndian.Uint16(portd[:2])
+	port := binary.BigEndian.Uint16(portd)
 	return net.JoinHostPort(host, fmt.Sprintf("%d", port)), nil
 }
-
-func (c *Wspc) dynamic(conf *msg.WspConfig, conn net.Conn) {
-	addr := conf.Address()
+func (p *Socks5Proxy) readIP(conn *bufio.Reader, len byte) (string, error) {
+	addr := make([]byte, len)
+	if _, err := io.ReadFull(conn, addr); err != nil {
+		return "", err
+	}
+	return net.IP(addr).String(), nil
+}
+func (p *Socks5Proxy) replies(addr string, reader io.Reader, conn net.Conn) {
+	// +----+-----+-------+------+----------+----------+
+	// |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+	// +----+-----+-------+------+----------+----------+
+	// | 1  |  1  | X'00' |  1   | Variable |    2     |
+	// +----+-----+-------+------+----------+----------+
+	c := p.wspc
+	conf := p.conf.DynamicAddr(addr)
 	log.Println("open socks5 proxy", addr)
 	id := ksuid.New().String()
 
@@ -145,7 +170,7 @@ func (c *Wspc) dynamic(conf *msg.WspConfig, conn net.Conn) {
 		c.routing.AddRepeater(id, repeater)
 		defer c.routing.Delete(id)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-		repeater.Copy()
+		repeater.CopyFrom(reader)
 		log.Println("close socks5 proxy", addr)
 	}})
 	if err := c.wan.Dail(id, conf); err != nil {

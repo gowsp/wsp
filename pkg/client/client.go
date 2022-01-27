@@ -1,3 +1,4 @@
+// Package client for wsp
 package client
 
 import (
@@ -48,6 +49,10 @@ func (c *Wspc) connectWs() error {
 	return err
 }
 
+func (c *Wspc) Close() {
+	c.routing.Close()
+	c.wan.Close()
+}
 func (c *Wspc) ListenAndServe() {
 	err := c.connectWs()
 	if err != nil {

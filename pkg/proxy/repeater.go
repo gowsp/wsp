@@ -27,10 +27,14 @@ type NetRepeater struct {
 }
 
 func (r *NetRepeater) Copy() error {
+	return r.CopyFrom(r.conn)
+}
+
+func (r *NetRepeater) CopyFrom(reader io.Reader) error {
 	buf := bytePool.Get().(*[]byte)
 	defer bytePool.Put(buf)
 
-	_, err := io.CopyBuffer(r.wan, r.conn, *buf)
+	_, err := io.CopyBuffer(r.wan, reader, *buf)
 	if r.IsClosed() {
 		return nil
 	}
