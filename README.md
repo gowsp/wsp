@@ -8,6 +8,7 @@ wsp 全称**W**eb**S**ocket **P**roxy 是一种基于 WebSocket 的全方位代�
 
 - 正向代理：支持 socks5 http代理，实现突破防火墙的访问
 - 反向代理：支持将NAT或防火墙后面的本地服务器暴露给Internet
+- 网络穿透：将处在NAT设备之后的机器建立连接通讯隧道，进行数据的相互访问
 
 wsp为C/S架构，其中 wsps 位于公网提供 WebSocket 服务， wspc 连接 wsps 进行数据转发，以下为简单的结构示意图
 
@@ -35,7 +36,7 @@ wsp为C/S架构，其中 wsps 位于公网提供 WebSocket 服务， wspc 连接
 
 ## Wsps
 
-服务端安装，下载[Release page](https://github.com/gowsp/wsp/releases/latest)的程序，将wsps放置在公网机器，配置用于提供web服务的端口，其最小化配置如下：
+服务端安装，根据操作系统从[Release](https://github.com/gowsp/wsp/releases/latest)下载相应的程序包，解压将wsps放置在公网机器，配置用于提供服务的web端口，最小化配置如下：
 
 ```json
 {
@@ -47,17 +48,17 @@ wsp为C/S架构，其中 wsps 位于公网提供 WebSocket 服务， wspc 连接
 
 ### Wspc
 
-wspc功能设计参考了ssh，提供以下三种转发模式：
+wspc功能设计参考了ssh，配置项存在三种转发模式：
 
-- DynamicForward，动态转发， 提供正向代理如：socks5，http代理
-- RemoteForward，远程转发，将本地端口连接转发至远端，支持 TCP  HTTP HTTPS 协议
-  - HTTP 和 HTTPS 直接注册在wsps的web服务上，支持域名和路径两种方式
-  - TCP 注册在 wsps 后等待其他 wspc 端的接入
+- DynamicForward，动态转发，提供正向代理如：socks5，http代理
+- RemoteForward，远程转发，将本地端口服务暴露在wsps上，支持 TCP  HTTP HTTPS 协议
 - LocalForward，本地转发，用于本地访问已注册的`远程转发`服务
 
-## DynamicForward
+## 正向代理
 
-正向代理，动态转发连接请求，配置格式：`protocols://[bind_address]:port`
+### client模式
+
+此模式下需要在本机中安装wspc配合wsps使用正向代理，wspc动态转发代理请求，连接的打开和流量传输通过wsps，配置格式：`protocols://[bind_address]:port`
 
 - `protocols`支持 socks5 代理协议，HTTP 代理
 - `bind_address`可选，空地址表示监听所有网卡IP
@@ -75,11 +76,54 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
 }
 ```
 
-启动wspc， `./wsps -c wsps.json`, 此时本地`1080`即提供socks5代理, 流量则通过`wsps`进行访问
+启动wspc， `./wsps -c wsps.json`, 此时本地`1080`提供socks5代理，`80`提供http代理, 流量则通过`wsps`进行访问
 
-## RemoteForward
+### vpn模式
 
-远程转发，将本地服务暴露在wsps上，供远程wspc或浏览器访问
+此模式下需要两台wspc配合wsps使用，三者功能角色如下：
+
+- wspc client 代理侧
+- wsps 中转侧，负责将wspc clinet的代理请求和数据中转给目标的wspc server
+- wspc server 服务侧，注册在wsps，负责打开来至wspc client的代理连接转发代理数据
+
+`wspc server`端配置`tunnel://channel[:password]@`
+
+- `channel`信道标识，注册在wsps上等待其他wspc接入的标识信息
+- `password`连接密码，接入的wspc连接密码需要一致才能通讯
+
+例：
+
+```json
+{
+    "server": "ws://mywsps.com:8010",
+    "remote": [
+        "tunnel://work_tunnel:password@"
+    ]
+}
+```
+
+`wspc client`端配置`protocols://remote_channel[:password]@[bind_address]:port`
+
+- `protocols`代理协议，支持 socks5 代理，HTTP 代理
+- `remote_channel`信道标识，`RemoteForward`端注册的`channel`
+- `password`密码，对应`RemoteForward`端密码
+- `bind_address`可选，空地址表示监听所有网卡IP
+- `port`本地监听端口
+
+```json
+{
+    "server": "ws://mywsps.com:8010",
+    "dynamic": [
+        "socks5://work_tunnel:password@127.0.0.1:1080"
+    ]
+}
+```
+
+在`wspc client`端用socket5代理的连接和流量都会转发到`wspc server`端，如socket5代理下，访问`192.168.1.200:22`即访问`wspc server`端的`192.168.1.200:22`
+
+## 反向代理
+
+将本地服务暴露在wsps上，供浏览器直接访问
 
 ### 暴露本地HTTP HTTPS服务
 
@@ -100,9 +144,9 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
     "server": "ws://mywsps.com:8010",
     "remote": [
         "http://127.0.0.1:8080?mode=path&value=api",
-        "http://127.0.0.1:8080/api?mode=path&value=api",
+        "http://127.0.0.1:8080/api/?mode=path&value=api",
         "http://127.0.0.1:8080?mode=domain&value=customwsp.com",
-        "http://127.0.0.1:8080/api?mode=domain&value=customapi.com",
+        "http://127.0.0.1:8080/api/?mode=domain&value=customapi.com",
     ]
 }
 ```
@@ -114,88 +158,7 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
 - 访问 http://customwsp.com:8010/api/greet -> http://127.0.0.1:8080/api/greet
 - 访问 http://customwsp.com:8010/greet -> http://127.0.0.1:8080/api/greet
 
-## RemoteForward && LocalForward
-
-`RemoteForward`暴露本地服务至wsps等待其他wspc连接，配置格式：`protocols://channel[:password]@[bind_address]:port`
-
-- `protocols` 支持 tcp
-- `channel`信道标识，注册在wsps上等待其他wspc接入的标识信息
-- `password`连接密码，接入的wspc连接密码需要一致才能通讯
-- `bind_address`监听地址
-- `port`服务端口
-
-如暴露本地网络中ssh服务配置如下
-
-```json
-{
-    "server": "ws://mywsps.com:8010",
-    "remote": [
-        "tcp://ssh:ssh@192.168.1.200:22"
-    ]
-}
-```
-
-`LocalForward`本地转发，开启本地端口来访问远程已注册的`RemoteForward`，配置格式：`protocols://remote_channel[:password]@[bind_address]:port`
-
-- `protocols` 支持 tcp
-- `channel`信道标识，wsps上已注册的的channel才能访问
-- `password`连接密码，与`RemoteForward`端密码一致才能通讯
-- `bind_address`监听地址
-- `port`本地端口
-
-如访问已暴露的`RemoteForward`ssh服务，本地`LocalForward`进行如下配置
-
-```json
-{
-    "server": "ws://mywsps.com:8010",
-    "local": [
-        "tcp://ssh:ssh@127.0.0.1:2200"
-    ]
-}
-```
-
-此时访问本地的`127.0.0.1:2200`即为访问`RemoteForward`端中`192.168.1.200:22`的ssh服务
-
-## RemoteForward && DynamicForward
-
-`RemoteForward && LocalForward`虽已满足了大部分场景，但在配置上`RemoteForward`端开放一个端口，`LocalForward`端也要开放端口，在使用上带来了一些不便，将`RemoteForward`与`DynamicForward`结合可以实现地址的动态打开，带来类似vpn的体验
-
-`RemoteForward`端配置`tunnel://channel[:password]@`
-
-- `channel`信道标识，注册在wsps上等待其他wspc接入的标识信息
-- `password`连接密码，接入的wspc连接密码需要一致才能通讯
-
-例：
-
-```json
-{
-    "server": "ws://mywsps.com:8010",
-    "remote": [
-        "tunnel://work_tunnel:password@"
-    ]
-}
-```
-
-`DynamicForward`端配置`protocols://remote_channel[:password]@[bind_address]:port`
-
-- `protocols`代理协议，支持 socks5 代理，HTTP 代理
-- `remote_channel`信道标识，`RemoteForward`端注册的`channel`
-- `password`密码，对应`RemoteForward`端密码
-- `bind_address`可选，空地址表示监听所有网卡IP
-- `port`本地监听端口
-
-```json
-{
-    "server": "ws://mywsps.com:8010",
-    "dynamic": [
-        "socks5://work_tunnel:password@127.0.0.1:1080"
-    ]
-}
-```
-
-在`DynamicForward`端用socket5代理的连接和流量都会转发到`RemoteForward`端，如socket5代理下，访问`192.168.1.200:22`即访问`RemoteForward`端的`192.168.1.200:22`
-
-## TCP && websocket
+### 包装本地TCP服务为websocket
 
 某些场景下希望将TCP流量通过websocket进行转发，配置格式：`protocols://bind_address:port?mode=[mode]&value=[value]`
 
@@ -206,7 +169,7 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
   - `path` 路径模式
   - `domain` 域名模式
 
-例转发vnc远程服务到websocket，我们配置如下：
+例暴露vnc服务在websocket，我们配置如下：
 
 ```json
 {
@@ -218,6 +181,54 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
 ```
 
 这时我们可以打开[novnc](https://novnc.com/noVNC/vnc.html), 修改配置，修改为暴露的vnc服务参数，即可实现vnc的远程访问
+
+## 网络穿透
+
+此模式下需要两台wspc配合wsps使用，三者功能角色如下：
+
+- wspc client 接入侧
+- wsps 中转侧，负责将wspc clinet的代理请求和数据中转给目标的wspc server
+- wspc server 服务侧，注册在wsps，负责打开来至wspc client的连接或转发数据
+
+`wspc server`将本地服务注册至wsps等待`wspc client`连接，配置格式：`protocols://channel[:password]@[bind_address]:port`
+
+- `protocols` 支持 tcp
+- `channel`信道标识，注册在wsps上等待其他wspc接入的标识信息
+- `password`连接密码，接入的wspc连接密码需要一致才能通讯
+- `bind_address`监听地址
+- `port`服务端口
+
+如注册本地网络中ssh服务配置如下
+
+```json
+{
+    "server": "ws://mywsps.com:8010",
+    "remote": [
+        "tcp://ssh:ssh@192.168.1.200:22"
+    ]
+}
+```
+
+`wspc client`本地转发，开启本地端口来访问远程已注册的`wspc server`，配置格式：`protocols://remote_channel[:password]@[bind_address]:port`
+
+- `protocols` 支持 tcp
+- `channel`信道标识，wsps上已注册的的channel才能访问
+- `password`连接密码，与`RemoteForward`端密码一致才能通讯
+- `bind_address`监听地址
+- `port`本地端口
+
+如访问已注册的`wspc server`ssh服务，本地`wspc client`进行如下配置
+
+```json
+{
+    "server": "ws://mywsps.com:8010",
+    "local": [
+        "tcp://ssh:ssh@127.0.0.1:2200"
+    ]
+}
+```
+
+此时访问本地的`127.0.0.1:2200`即为访问`wspc server`端中`192.168.1.200:22`的ssh服务
 
 ## 作为模块引入
 
@@ -250,7 +261,6 @@ server.NewWspsWithHandler(config, r)
 
 ## TODO
 
-- [ ] 消息处理事件驱动设计
 - [ ] 支持命令行模式使用
 
 ## 反馈建议
