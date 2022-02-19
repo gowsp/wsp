@@ -88,9 +88,9 @@ func (r *Router) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
 		prepare := p.Director
 		path := strings.TrimPrefix(channel, prefix)
 		p.Director = func(r *http.Request) {
-			prepare(r)
 			prefix := "/" + path
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
+			prepare(r)
 		}
 	}
 	p.Transport = &http.Transport{
