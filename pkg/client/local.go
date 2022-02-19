@@ -41,7 +41,7 @@ func (c *Wspc) NewLocalConn(conn net.Conn, conf *msg.WspConfig) {
 	log.Println("open remote channel", channel)
 	id := ksuid.New().String()
 
-	c.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, message *msg.WspResponse) {
+	c.routing.AddPending(id, func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
 			log.Printf("close channel %s, %s", channel, message.Data)
 			conn.Close()
@@ -53,7 +53,7 @@ func (c *Wspc) NewLocalConn(conn net.Conn, conf *msg.WspConfig) {
 		defer c.routing.Delete(id)
 		repeater.Copy()
 		log.Println("close remote channel", channel)
-	}})
+	})
 
 	if err := c.wan.Dail(id, conf); err != nil {
 		c.routing.DeleteConn(id)

@@ -3,7 +3,6 @@ package client
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -25,6 +24,11 @@ type Config struct {
 	Dynamic []string `json:"dynamic,omitempty"`
 }
 
+func NewWspc(config *Config) *Wspc {
+	wspc := &Wspc{Config: config}
+	return wspc
+}
+
 type Wspc struct {
 	Config  *Config
 	channel sync.Map
@@ -33,6 +37,12 @@ type Wspc struct {
 	closed  uint32
 }
 
+func (c *Wspc) Wan() *proxy.Wan {
+	return c.wan
+}
+func (c *Wspc) Routing() *proxy.Routing {
+	return c.routing
+}
 func (c *Wspc) connectWs() error {
 	headers := make(http.Header)
 	headers.Set("Auth", c.Config.Auth)
@@ -51,7 +61,7 @@ func (c *Wspc) connectWs() error {
 	return err
 }
 
-func (c *Wspc) Close() {
+func (c *Wspc) Interrupt() {
 	atomic.AddUint32(&c.closed, 1)
 	c.routing.Close()
 	c.wan.Close()
@@ -63,33 +73,21 @@ func (c *Wspc) ListenAndServe() {
 		return
 	}
 	c.forward()
-	c.start()
+	proxy.NewHandler(c).ServeConn()
 }
 
+var startOnce sync.Once
+
 func (c *Wspc) forward() {
-	c.LocalForward()
 	c.RemoteForward()
-	c.DynamicForward()
+	startOnce.Do(func() {
+		c.LocalForward()
+		c.DynamicForward()
+	})
 }
-func (c *Wspc) start() {
-	for {
-		_, data, err := c.wan.Read()
-		if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
-			break
-		}
-		if err != nil {
-			log.Println("error reading webSocket message:", err)
-			break
-		}
-		var m msg.WspMessage
-		err = proto.Unmarshal(data, &m)
-		if err != nil {
-			log.Println("error unmarshal message:", err)
-			continue
-		}
-		c.process(&msg.Data{Msg: &m, Raw: &data})
-	}
+func (c *Wspc) Close() error {
 	c.retry()
+	return nil
 }
 func (c *Wspc) retry() {
 	if atomic.LoadUint32(&c.closed) > 0 {
@@ -99,23 +97,6 @@ func (c *Wspc) retry() {
 	time.Sleep(3 * time.Second)
 	c.ListenAndServe()
 }
-func (c *Wspc) process(message *msg.Data) {
-	switch message.Cmd() {
-	case msg.WspCmd_CONNECT:
-		go func() {
-			err := c.NewConn(message.Msg)
-			if err != nil {
-				c.wan.ReplyMessage(message.ID(), false, err.Error())
-			}
-		}()
-	default:
-		err := c.routing.Routing(message)
-		if errors.Is(err, proxy.ErrConnNotExist) {
-			c.wan.CloseRemote(message.ID(), err.Error())
-		}
-	}
-}
-
 func (c *Wspc) NewConn(message *msg.WspMessage) error {
 	var reqeust msg.WspRequest
 	err := proto.Unmarshal(message.Data, &reqeust)

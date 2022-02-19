@@ -158,7 +158,7 @@ func (p *Socks5Proxy) replies(addr string, reader io.Reader, conn net.Conn) {
 	log.Println("open socks5 proxy", addr)
 	id := ksuid.New().String()
 
-	c.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, message *msg.WspResponse) {
+	c.routing.AddPending(id, func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
 			conn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 			log.Printf("close socks5 proxy %s, %s\n", addr, message.Data)
@@ -172,7 +172,7 @@ func (p *Socks5Proxy) replies(addr string, reader io.Reader, conn net.Conn) {
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 		repeater.CopyFrom(reader)
 		log.Println("close socks5 proxy", addr)
-	}})
+	})
 	if err := c.wan.Dail(id, conf); err != nil {
 		conn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 		log.Printf("close socks5 proxy %s, %s\n", addr, err.Error())

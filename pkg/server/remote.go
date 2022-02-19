@@ -12,14 +12,14 @@ func (r *Router) AddRemote(id string, conf *msg.WspConfig) error {
 	channel := conf.Channel()
 	switch conf.Mode() {
 	case "path":
-		if conf.Value() == r.GlobalConfig().Path {
+		if conf.Value() == r.Config().Path {
 			return fmt.Errorf("setting the same path as wsps is not allowed")
 		}
 	case "domain":
 		switch {
-		case r.GlobalConfig().Host == "":
+		case r.Config().Host == "":
 			return fmt.Errorf("wsps does not set host, domain method is not allowed")
-		case r.GlobalConfig().Host == conf.Value():
+		case r.Config().Host == conf.Value():
 			return fmt.Errorf("setting the same domain as wsps is not allowed")
 		}
 	default:
@@ -47,7 +47,7 @@ func (r *Router) NewRemoteConn(id string, conf *msg.WspConfig) error {
 		if !ok {
 			return fmt.Errorf("channel not registered")
 		}
-		remote.routing.AddPending(id, &proxy.Pending{OnReponse: func(wm *msg.Data, res *msg.WspResponse) {
+		remote.routing.AddPending(id, func(wm *msg.Data, res *msg.WspResponse) {
 			if res.Code == msg.WspCode_SUCCESS {
 				remoteWirter := proxy.NewWsRepeater(id, remote.wan)
 				r.routing.AddRepeater(id, remoteWirter)
@@ -57,7 +57,7 @@ func (r *Router) NewRemoteConn(id string, conf *msg.WspConfig) error {
 				remote.routing.DeleteConn(id)
 			}
 			r.wan.Write(*wm.Raw)
-		}})
+		})
 
 		if err := remote.wan.Dail(id, conf); err != nil {
 			remote.routing.DeleteConn(id)

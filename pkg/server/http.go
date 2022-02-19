@@ -37,9 +37,9 @@ func (r *Router) ServeHTTP(channel string, rw http.ResponseWriter, req *http.Req
 func (r *Router) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
 	id := ksuid.New().String()
 	response := make(chan *msg.WspResponse)
-	r.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, res *msg.WspResponse) {
+	r.routing.AddPending(id, func(data *msg.Data, res *msg.WspResponse) {
 		response <- res
-	}})
+	})
 	if err := r.wan.Dail(id, conf); err != nil {
 		http.Error(w, "router dail error", 500)
 		r.routing.DeleteConn(id)
@@ -105,9 +105,9 @@ func (r *Router) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
 				return nil, err
 			}
 			response := make(chan *msg.WspResponse)
-			r.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, res *msg.WspResponse) {
+			r.routing.AddPending(id, func(data *msg.Data, res *msg.WspResponse) {
 				response <- res
-			}})
+			})
 			var res *msg.WspResponse
 			select {
 			case res = <-response:

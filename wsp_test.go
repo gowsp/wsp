@@ -50,11 +50,11 @@ func TestSocks5Proxy(t *testing.T) {
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
-	client := client.Wspc{Config: &client.Config{
+	client := client.NewWspc(&client.Config{
 		Auth:    "auth",
 		Server:  "ws://127.0.0.1:8080/proxy",
 		Dynamic: []string{"socks5://:1088"},
-	}}
+	})
 	client.ListenAndServe()
 	<-c
 	log.Println("closed")
@@ -104,10 +104,10 @@ func TestProxy(t *testing.T) {
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{"tcp://ssh:ssh@10.0.0.2:22"},
 	}
-	l := client.Wspc{Config: sshConfig}
+	l := client.NewWspc(sshConfig)
 	go l.ListenAndServe()
 	time.Sleep(1 * time.Second)
-	v := client.Wspc{Config: sshConfig}
+	v := client.NewWspc(sshConfig)
 	go v.ListenAndServe()
 	time.Sleep(1 * time.Second)
 
@@ -116,7 +116,7 @@ func TestProxy(t *testing.T) {
 		Server: "ws://127.0.0.1:8080/proxy",
 		Local:  []string{"tcp://ssh:ssh@127.0.0.1:2200"},
 	}
-	r := client.Wspc{Config: config}
+	r := client.NewWspc(config)
 	go r.ListenAndServe()
 	s := make(chan os.Signal, 1)
 	signal.Notify(s, os.Interrupt)

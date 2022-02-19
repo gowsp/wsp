@@ -1,15 +1,12 @@
 package server
 
 import (
-	"errors"
 	"fmt"
-	"log"
 	"sync"
 
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/gowsp/wsp/pkg/proxy"
 	"google.golang.org/protobuf/proto"
-	"nhooyr.io/websocket"
 )
 
 type Router struct {
@@ -20,48 +17,19 @@ type Router struct {
 	routing *proxy.Routing
 }
 
-func (s *Wsps) NewRouter(ws *websocket.Conn) *Router {
-	wan := proxy.NewWan(ws)
-	return &Router{wsps: s, wan: wan, routing: proxy.NewRouting()}
+func (r *Router) Wan() *proxy.Wan {
+	return r.wan
 }
-
-func (r *Router) GlobalConfig() *Config {
+func (r *Router) Routing() *proxy.Routing {
+	return r.routing
+}
+func (r *Router) Config() *Config {
 	return r.wsps.config
 }
 
-func (r *Router) ServeConn() {
-	for {
-		_, data, err := r.wan.Read()
-		if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
-			break
-		}
-		if err != nil {
-			log.Println("error reading webSocket message:", err)
-			break
-		}
-		var m msg.WspMessage
-		if proto.Unmarshal(data, &m) != nil {
-			log.Println("error unmarshal message:", err)
-			continue
-		}
-		r.process(&msg.Data{Msg: &m, Raw: &data})
-	}
+func (r *Router) Close() error {
 	r.wsps.Delete(r.channel)
-}
-
-func (r *Router) process(data *msg.Data) {
-	switch data.Cmd() {
-	case msg.WspCmd_CONNECT:
-		err := r.NewConn(data.Msg)
-		if err != nil {
-			r.wan.ReplyMessage(data.ID(), false, err.Error())
-		}
-	default:
-		err := r.routing.Routing(data)
-		if errors.Is(err, proxy.ErrConnNotExist) {
-			r.wan.CloseRemote(data.ID(), err.Error())
-		}
-	}
+	return nil
 }
 
 func (r *Router) NewConn(message *msg.WspMessage) error {

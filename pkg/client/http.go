@@ -53,7 +53,7 @@ func (p *HTTPProxy) ServeConn(conn net.Conn) {
 	log.Println("open http proxy", addr)
 	id := ksuid.New().String()
 
-	c.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, message *msg.WspResponse) {
+	c.routing.AddPending(id, func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
 			proxy.PutBuffer(buffer)
 			conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))
@@ -73,7 +73,7 @@ func (p *HTTPProxy) ServeConn(conn net.Conn) {
 		proxy.PutBuffer(buffer)
 		repeater.Copy()
 		log.Println("close http proxy", addr)
-	}})
+	})
 	config := p.conf.DynamicAddr(addr)
 	if err := c.wan.Dail(id, config); err != nil {
 		proxy.PutBuffer(buffer)

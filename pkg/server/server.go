@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gowsp/wsp/pkg/proxy"
 	"nhooyr.io/websocket"
 )
 
@@ -78,5 +79,10 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	defer ws.Close(websocket.StatusNormalClosure, "close connect")
 
 	router := s.NewRouter(ws)
-	router.ServeConn()
+	proxy.NewHandler(router).ServeConn()
+}
+
+func (s *Wsps) NewRouter(ws *websocket.Conn) *Router {
+	wan := proxy.NewWan(ws)
+	return &Router{wsps: s, wan: wan, routing: proxy.NewRouting()}
 }

@@ -3,12 +3,9 @@ package client
 import (
 	"log"
 	"net"
-	"sync"
 
 	"github.com/gowsp/wsp/pkg/msg"
 )
-
-var dynamic sync.Once
 
 type DynamicProxy interface {
 	// Listen local
@@ -19,16 +16,14 @@ type DynamicProxy interface {
 }
 
 func (c *Wspc) DynamicForward() {
-	dynamic.Do(func() {
-		for _, val := range c.Config.Dynamic {
-			conf, err := msg.NewWspConfig(msg.WspType_DYNAMIC, val)
-			if err != nil {
-				log.Println("forward dynamic error,", err)
-				continue
-			}
-			c.ListenDynamic(conf)
+	for _, val := range c.Config.Dynamic {
+		conf, err := msg.NewWspConfig(msg.WspType_DYNAMIC, val)
+		if err != nil {
+			log.Println("forward dynamic error,", err)
+			continue
 		}
-	})
+		c.ListenDynamic(conf)
+	}
 }
 
 func (c *Wspc) ListenDynamic(conf *msg.WspConfig) {

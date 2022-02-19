@@ -187,7 +187,7 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
 ```json
 {
     "server": "ws://mywsps.com:8010",
-    "local": [
+    "dynamic": [
         "socks5://work_tunnel:password@127.0.0.1:1080"
     ]
 }
@@ -224,7 +224,7 @@ wspc功能设计参考了ssh，提供以下三种转发模式：
 wsp在开发时考虑了与现有web服务的协作，支持作为一个功能模块引入
 
 ```
-go get -u https://github.com/gowsp/wsp
+go get -u github.com/gowsp/wsp
 ```
 
 与官方http集成

@@ -24,13 +24,13 @@ func (c *Wspc) RemoteForward() {
 func (c *Wspc) ListenRemote(conf *msg.WspConfig) {
 	log.Println("listen remote on channel", conf.Channel())
 	id := ksuid.New().String()
-	c.routing.AddPending(id, &proxy.Pending{OnReponse: func(data *msg.Data, message *msg.WspResponse) {
+	c.routing.AddPending(id, func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
 			log.Println("err", message.Data)
 			return
 		}
 		c.channel.Store(conf.Channel(), conf)
-	}})
+	})
 	if err := c.wan.Dail(id, conf); err != nil {
 		log.Println(err)
 		return
