@@ -66,7 +66,10 @@ func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
 	c.routing.AddRepeater(id, repeater)
 	defer c.routing.Delete(id)
 
-	c.wan.Reply(id, true)
+	if err = c.wan.Succeed(id); err != nil {
+		conn.Close()
+		return err
+	}
 
 	repeater.Copy()
 	return nil

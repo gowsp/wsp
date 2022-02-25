@@ -45,7 +45,7 @@ func (h *Handler) process(data *msg.Data) {
 		go func() {
 			err := h.proxy.NewConn(data.Msg)
 			if err != nil {
-				h.wan.ReplyMessage(data.ID(), false, err.Error())
+				h.wan.Reply(data.ID(), false, err.Error())
 			}
 		}()
 	default:

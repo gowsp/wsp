@@ -44,8 +44,7 @@ func (r *Router) NewConn(message *msg.WspMessage) error {
 	}
 	switch req.Type {
 	case msg.WspType_DYNAMIC:
-		go r.NewDynamic(message.Id, conf)
-		return nil
+		return r.NewDynamic(message.Id, conf)
 	case msg.WspType_LOCAL:
 		return r.NewRemoteConn(message.Id, conf)
 	case msg.WspType_REMOTE:

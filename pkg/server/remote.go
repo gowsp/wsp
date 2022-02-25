@@ -31,7 +31,7 @@ func (r *Router) AddRemote(id string, conf *msg.WspConfig) error {
 		return fmt.Errorf("channel %s already registered", channel)
 	}
 	log.Println("register channel", channel)
-	r.wan.Reply(id, true)
+	r.wan.Succeed(id)
 	r.wsps.Store(channel, r)
 	r.channel.Store(channel, conf)
 	return nil

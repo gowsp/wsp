@@ -43,7 +43,7 @@ func (w *Wan) Dail(id string, conf *msg.WspConfig) (err error) {
 	_, err = w.Write(data)
 	return err
 }
-func (w *Wan) ReplyMessage(id string, succeed bool, message string) (err error) {
+func (w *Wan) Reply(id string, succeed bool, message string) (err error) {
 	res := msg.WspResponse{Data: message}
 	if succeed {
 		res.Code = msg.WspCode_SUCCESS
@@ -55,17 +55,8 @@ func (w *Wan) ReplyMessage(id string, succeed bool, message string) (err error) 
 	_, err = w.Write(data)
 	return err
 }
-func (w *Wan) Reply(id string, succeed bool) (err error) {
-	res := msg.WspResponse{}
-	if succeed {
-		res.Code = msg.WspCode_SUCCESS
-	} else {
-		res.Code = msg.WspCode_FAILED
-	}
-	response, _ := proto.Marshal(&res)
-	data := Wrap(id, msg.WspCmd_RESPOND, response)
-	_, err = w.Write(data)
-	return err
+func (w *Wan) Succeed(id string) (err error) {
+	return w.Reply(id, true, "")
 }
 func (w *Wan) Close() {
 	w.conn.Close(websocket.StatusNormalClosure, "normal close")
