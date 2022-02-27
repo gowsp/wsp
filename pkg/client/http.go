@@ -53,7 +53,7 @@ func (p *HTTPProxy) ServeConn(conn net.Conn) {
 	log.Println("open http proxy", addr)
 	id := ksuid.New().String()
 
-	c.routing.AddPending(id, func(data *msg.Data, message *msg.WspResponse) {
+	trans := func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
 			proxy.PutBuffer(buffer)
 			conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))
@@ -61,10 +61,7 @@ func (p *HTTPProxy) ServeConn(conn net.Conn) {
 			conn.Close()
 			return
 		}
-		in := c.wan.NewWriter(id)
-		repeater := proxy.NewNetRepeater(in, conn)
-		c.routing.AddRepeater(id, repeater)
-		defer c.routing.Delete(id)
+		in, repeater := c.wan.NewTCPChannel(id, conn)
 		if isConnect {
 			conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 		} else {
@@ -73,13 +70,12 @@ func (p *HTTPProxy) ServeConn(conn net.Conn) {
 		proxy.PutBuffer(buffer)
 		repeater.Copy()
 		log.Println("close http proxy", addr)
-	})
+	}
 	config := p.conf.DynamicAddr(addr)
-	if err := c.wan.Dail(id, config); err != nil {
+	if err := c.wan.Dail(id, config, trans); err != nil {
 		proxy.PutBuffer(buffer)
 		conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))
 		log.Printf("close http proxy %s, %s\n", addr, err.Error())
-		c.routing.DeleteConn(id)
 		conn.Close()
 	}
 }

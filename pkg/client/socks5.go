@@ -9,7 +9,6 @@ import (
 	"net"
 
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
 )
 
@@ -158,25 +157,21 @@ func (p *Socks5Proxy) replies(addr string, reader io.Reader, conn net.Conn) {
 	log.Println("open socks5 proxy", addr)
 	id := ksuid.New().String()
 
-	c.routing.AddPending(id, func(data *msg.Data, message *msg.WspResponse) {
+	trans := func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
 			conn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 			log.Printf("close socks5 proxy %s, %s\n", addr, message.Data)
 			conn.Close()
 			return
 		}
-		in := c.wan.NewWriter(id)
-		repeater := proxy.NewNetRepeater(in, conn)
-		c.routing.AddRepeater(id, repeater)
-		defer c.routing.Delete(id)
+		_, repeater := c.wan.NewTCPChannel(id, conn)
 		conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-		repeater.CopyFrom(reader)
+		repeater.CopyBy(reader)
 		log.Println("close socks5 proxy", addr)
-	})
-	if err := c.wan.Dail(id, conf); err != nil {
+	}
+	if err := c.wan.Dail(id, conf, trans); err != nil {
 		conn.Write([]byte{0x05, 0x04, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 		log.Printf("close socks5 proxy %s, %s\n", addr, err.Error())
-		c.routing.DeleteConn(id)
 		conn.Close()
 	}
 }

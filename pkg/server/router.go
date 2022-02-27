@@ -17,9 +17,6 @@ type Router struct {
 	routing *proxy.Routing
 }
 
-func (r *Router) Wan() *proxy.Wan {
-	return r.wan
-}
 func (r *Router) Routing() *proxy.Routing {
 	return r.routing
 }

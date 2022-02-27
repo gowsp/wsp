@@ -47,7 +47,7 @@ func (r *Router) NewRemoteConn(id string, conf *msg.WspConfig) error {
 		if !ok {
 			return fmt.Errorf("channel not registered")
 		}
-		remote.routing.AddPending(id, func(wm *msg.Data, res *msg.WspResponse) {
+		trans := func(wm *msg.Data, res *msg.WspResponse) {
 			if res.Code == msg.WspCode_SUCCESS {
 				remoteWirter := proxy.NewWsRepeater(id, remote.wan)
 				r.routing.AddRepeater(id, remoteWirter)
@@ -57,10 +57,9 @@ func (r *Router) NewRemoteConn(id string, conf *msg.WspConfig) error {
 				remote.routing.DeleteConn(id)
 			}
 			r.wan.Write(*wm.Raw)
-		})
+		}
 
-		if err := remote.wan.Dail(id, conf); err != nil {
-			remote.routing.DeleteConn(id)
+		if err := remote.wan.Dail(id, conf, trans); err != nil {
 			return err
 		}
 		return nil

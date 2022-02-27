@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/gowsp/wsp/pkg/proxy"
 )
 
 func (r *Router) NewDynamic(id string, conf *msg.WspConfig) error {
@@ -18,13 +17,10 @@ func (r *Router) NewDynamic(id string, conf *msg.WspConfig) error {
 		return err
 	}
 
-	in := r.wan.NewWriter(id)
-	repeater := proxy.NewNetRepeater(in, conn)
-	r.routing.AddRepeater(id, repeater)
-	defer r.routing.Delete(id)
-
+	_, repeater := r.wan.NewTCPChannel(id, conn)
+	
 	if err = r.wan.Succeed(id); err != nil {
-		conn.Close()
+		repeater.Interrupt()
 		return err
 	}
 	repeater.Copy()

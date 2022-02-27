@@ -10,27 +10,28 @@ import (
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
-type Repeater interface {
-	Relay(data *msg.Data) error
+type Channel interface {
+	Transport(data *msg.Data) error
 	Interrupt() error
 	io.Closer
 }
 
-func NewNetRepeater(wan io.WriteCloser, conn net.Conn) *NetRepeater {
-	return &NetRepeater{conn, wan, 0}
+func NewTCPChannel(wan io.WriteCloser, conn net.Conn, onClose func()) *TCPChannel {
+	return &TCPChannel{conn, wan, onClose, 0}
 }
 
-type NetRepeater struct {
-	conn   net.Conn
-	wan    io.WriteCloser
-	closed uint32
+type TCPChannel struct {
+	conn    net.Conn
+	wan     io.WriteCloser
+	onClose func()
+	closed  uint32
 }
 
-func (r *NetRepeater) Copy() error {
-	return r.CopyFrom(r.conn)
+func (r *TCPChannel) Copy() error {
+	return r.CopyBy(r.conn)
 }
 
-func (r *NetRepeater) CopyFrom(reader io.Reader) error {
+func (r *TCPChannel) CopyBy(reader io.Reader) error {
 	buf := bytePool.Get().(*[]byte)
 	defer bytePool.Put(buf)
 
@@ -43,7 +44,7 @@ func (r *NetRepeater) CopyFrom(reader io.Reader) error {
 	}
 	return r.Close()
 }
-func (r *NetRepeater) Relay(data *msg.Data) error {
+func (r *TCPChannel) Transport(data *msg.Data) error {
 	_, err := r.conn.Write(data.Payload())
 	if err != nil {
 		log.Println(err)
@@ -51,34 +52,35 @@ func (r *NetRepeater) Relay(data *msg.Data) error {
 	}
 	return err
 }
-func (r *NetRepeater) Interrupt() error {
+func (r *TCPChannel) Interrupt() error {
 	atomic.AddUint32(&r.closed, 1)
 	return r.Close()
 }
-func (r *NetRepeater) IsClosed() bool {
+func (r *TCPChannel) IsClosed() bool {
 	return atomic.LoadUint32(&r.closed) > 0
 }
-func (r *NetRepeater) NotClosed() bool {
+func (r *TCPChannel) NotClosed() bool {
 	return atomic.LoadUint32(&r.closed) == 0
 }
-func (r *NetRepeater) Close() error {
+func (r *TCPChannel) Close() error {
 	if r.NotClosed() {
 		atomic.AddUint32(&r.closed, 1)
 		r.wan.Close()
 	}
+	r.onClose()
 	return r.conn.Close()
 }
 
-func NewWsRepeater(id string, output io.Writer) Repeater {
+func NewWsRepeater(id string, output *Wan) Channel {
 	return &WsRepeater{id: id, output: output}
 }
 
 type WsRepeater struct {
 	id     string
-	output io.Writer
+	output *Wan
 }
 
-func (r *WsRepeater) Relay(data *msg.Data) error {
+func (r *WsRepeater) Transport(data *msg.Data) error {
 	_, err := r.output.Write(*data.Raw)
 	return err
 }
@@ -88,5 +90,6 @@ func (r *WsRepeater) Interrupt() error {
 func (r *WsRepeater) Close() error {
 	data := Wrap(r.id, msg.WspCmd_INTERRUPT, []byte{})
 	_, err := r.output.Write(data)
+	r.output.routing.Delete(r.id)
 	return err
 }

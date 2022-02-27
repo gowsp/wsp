@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"errors"
 	"log"
 
@@ -9,19 +10,9 @@ import (
 	"nhooyr.io/websocket"
 )
 
-func NewHandler(proxy Proxy) *Handler {
-	return &Handler{proxy: proxy, routing: proxy.Routing(), wan: proxy.Wan()}
-}
-
-type Handler struct {
-	wan     *Wan
-	proxy   Proxy
-	routing *Routing
-}
-
-func (h *Handler) ServeConn() {
+func (w *Wan) Serve() {
 	for {
-		_, data, err := h.wan.Read()
+		_, data, err := w.conn.Read(context.Background())
 		if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
 			break
 		}
@@ -34,24 +25,29 @@ func (h *Handler) ServeConn() {
 			log.Println("error unmarshal message:", err)
 			continue
 		}
-		h.process(&msg.Data{Msg: &m, Raw: &data})
+		w.process(&msg.Data{Msg: &m, Raw: &data})
 	}
-	h.proxy.Close()
+	w.proxy.Close()
 }
 
-func (h *Handler) process(data *msg.Data) {
+func (w *Wan) process(data *msg.Data) {
 	switch data.Cmd() {
 	case msg.WspCmd_CONNECT:
 		go func() {
-			err := h.proxy.NewConn(data.Msg)
+			err := w.proxy.NewConn(data.Msg)
 			if err != nil {
-				h.wan.Reply(data.ID(), false, err.Error())
+				w.reply(data.ID(), false, err.Error())
 			}
 		}()
 	default:
-		err := h.routing.Routing(data)
+		err := w.routing.Routing(data)
 		if errors.Is(err, ErrConnNotExist) {
-			h.wan.CloseRemote(data.ID(), err.Error())
+			w.interrupt(data.ID(), err.Error())
 		}
 	}
+}
+
+func (w *Wan) interrupt(id, message string) {
+	data := Wrap(id, msg.WspCmd_INTERRUPT, []byte(message))
+	w.Write(data)
 }

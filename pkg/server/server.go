@@ -78,11 +78,7 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close(websocket.StatusNormalClosure, "close connect")
 
-	router := s.NewRouter(ws)
-	proxy.NewHandler(router).ServeConn()
-}
-
-func (s *Wsps) NewRouter(ws *websocket.Conn) *Router {
-	wan := proxy.NewWan(ws)
-	return &Router{wsps: s, wan: wan, routing: proxy.NewRouting()}
+	router := &Router{wsps: s, routing: proxy.NewRouting()}
+	router.wan = proxy.NewWan(ws, router)
+	router.wan.Serve()
 }

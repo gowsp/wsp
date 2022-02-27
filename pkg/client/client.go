@@ -25,7 +25,7 @@ type Config struct {
 }
 
 func NewWspc(config *Config) *Wspc {
-	wspc := &Wspc{Config: config}
+	wspc := &Wspc{Config: config, routing: proxy.NewRouting()}
 	return wspc
 }
 
@@ -37,9 +37,6 @@ type Wspc struct {
 	closed  uint32
 }
 
-func (c *Wspc) Wan() *proxy.Wan {
-	return c.wan
-}
 func (c *Wspc) Routing() *proxy.Routing {
 	return c.routing
 }
@@ -55,9 +52,8 @@ func (c *Wspc) connectWs() error {
 	if resp.Status == "403" {
 		return fmt.Errorf("error auth")
 	}
-	c.wan = proxy.NewWan(ws)
+	c.wan = proxy.NewWan(ws, c)
 	go c.wan.HeartBeat(time.Second * 30)
-	c.routing = proxy.NewRouting()
 	return err
 }
 
@@ -73,7 +69,7 @@ func (c *Wspc) ListenAndServe() {
 		return
 	}
 	c.forward()
-	proxy.NewHandler(c).ServeConn()
+	c.wan.Serve()
 }
 
 var startOnce sync.Once

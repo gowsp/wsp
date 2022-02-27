@@ -7,8 +7,6 @@ import (
 )
 
 type Proxy interface {
-	Wan() *Wan
-
 	Routing() *Routing
 
 	NewConn(*msg.WspMessage) error

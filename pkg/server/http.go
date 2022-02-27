@@ -37,12 +37,11 @@ func (r *Router) ServeHTTP(channel string, rw http.ResponseWriter, req *http.Req
 func (r *Router) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
 	id := ksuid.New().String()
 	response := make(chan *msg.WspResponse)
-	r.routing.AddPending(id, func(data *msg.Data, res *msg.WspResponse) {
+	trans := func(data *msg.Data, res *msg.WspResponse) {
 		response <- res
-	})
-	if err := r.wan.Dail(id, conf); err != nil {
+	}
+	if err := r.wan.Dail(id, conf, trans); err != nil {
 		http.Error(w, "router dail error", 500)
-		r.routing.DeleteConn(id)
 		return
 	}
 	var res *msg.WspResponse
@@ -61,10 +60,8 @@ func (r *Router) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *
 		log.Printf("websocket accept %v", err)
 		return
 	}
-	writer := r.wan.NewWriter(id)
 	conn := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
-	repeater := proxy.NewNetRepeater(writer, conn)
-	r.routing.AddRepeater(id, repeater)
+	_, repeater := r.wan.NewTCPChannel(id, conn)
 	repeater.Copy()
 }
 func (r *Router) ServeHTTPProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
@@ -96,18 +93,13 @@ func (r *Router) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
 	p.Transport = &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			id := ksuid.New().String()
-			writer := r.wan.NewWriter(id)
-			conn := NewProxyConn(writer)
-			r.routing.AddRepeater(id, conn.(proxy.Repeater))
-			err := r.wan.Dail(id, conf)
-			if err != nil {
-				r.routing.Delete(id)
+			response := make(chan *msg.WspResponse)
+			trans := func(data *msg.Data, res *msg.WspResponse) {
+				response <- res
+			}
+			if err := r.wan.Dail(id, conf, trans); err != nil {
 				return nil, err
 			}
-			response := make(chan *msg.WspResponse)
-			r.routing.AddPending(id, func(data *msg.Data, res *msg.WspResponse) {
-				response <- res
-			})
 			var res *msg.WspResponse
 			select {
 			case res = <-response:
@@ -115,9 +107,11 @@ func (r *Router) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
 				res = &msg.WspResponse{Code: msg.WspCode_FAILED, Data: "time out"}
 			}
 			if res.Code == msg.WspCode_FAILED {
-				r.routing.Delete(id)
 				return nil, errors.New(res.Data)
 			}
+			writer := r.wan.NewWriter(id)
+			conn := NewProxyConn(writer)
+			r.routing.AddRepeater(id, conn.(proxy.Channel))
 			return conn, nil
 		},
 		ForceAttemptHTTP2:     true,

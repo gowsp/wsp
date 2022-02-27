@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
 )
 
@@ -24,14 +23,14 @@ func (c *Wspc) RemoteForward() {
 func (c *Wspc) ListenRemote(conf *msg.WspConfig) {
 	log.Println("listen remote on channel", conf.Channel())
 	id := ksuid.New().String()
-	c.routing.AddPending(id, func(data *msg.Data, message *msg.WspResponse) {
+	trans := func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
 			log.Println("err", message.Data)
 			return
 		}
 		c.channel.Store(conf.Channel(), conf)
-	})
-	if err := c.wan.Dail(id, conf); err != nil {
+	}
+	if err := c.wan.Dail(id, conf, trans); err != nil {
 		log.Println(err)
 		return
 	}
@@ -61,13 +60,10 @@ func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
 		return err
 	}
 
-	in := c.wan.NewWriter(id)
-	repeater := proxy.NewNetRepeater(in, conn)
-	c.routing.AddRepeater(id, repeater)
-	defer c.routing.Delete(id)
-
+	_, repeater := c.wan.NewTCPChannel(id, conn)
+	
 	if err = c.wan.Succeed(id); err != nil {
-		conn.Close()
+		repeater.Interrupt()
 		return err
 	}
 

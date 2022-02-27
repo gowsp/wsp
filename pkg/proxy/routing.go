@@ -22,18 +22,14 @@ type Routing struct {
 	accept  sync.Map
 }
 
-func (s *Routing) AddPending(id string, repeater Pending) {
-	s.connect.Store(id, repeater)
-}
 func (s *Routing) DeleteConn(id string) {
 	s.connect.Delete(id)
 }
-func (s *Routing) AddRepeater(id string, repeater Repeater) {
+func (s *Routing) AddRepeater(id string, repeater Channel) {
 	s.accept.Store(id, repeater)
 }
 func (s *Routing) Delete(id string) {
 	s.accept.Delete(id)
-	s.connect.Delete(id)
 }
 func (s *Routing) Routing(data *msg.Data) error {
 	id := data.ID()
@@ -49,14 +45,14 @@ func (s *Routing) Routing(data *msg.Data) error {
 		return ErrConnNotExist
 	case msg.WspCmd_TRANSFER:
 		if val, ok := s.accept.Load(id); ok {
-			val.(Repeater).Relay(data)
+			val.(Channel).Transport(data)
 			return nil
 		}
 		return ErrConnNotExist
 	case msg.WspCmd_INTERRUPT:
 		if val, ok := s.accept.Load(id); ok {
 			s.accept.Delete(data.ID())
-			val.(Repeater).Interrupt()
+			val.(Channel).Interrupt()
 		}
 	default:
 		log.Println("unknown command")
@@ -64,8 +60,8 @@ func (s *Routing) Routing(data *msg.Data) error {
 	return nil
 }
 func (s *Routing) Close() error {
-	s.connect.Range(func(key, value interface{}) bool {
-		value.(Repeater).Close()
+	s.accept.Range(func(key, value interface{}) bool {
+		value.(Channel).Close()
 		return true
 	})
 	return nil
