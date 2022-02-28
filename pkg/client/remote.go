@@ -14,14 +14,13 @@ func (c *Wspc) RemoteForward() {
 	for _, val := range c.Config.Remote {
 		conf, err := msg.NewWspConfig(msg.WspType_REMOTE, val)
 		if err != nil {
-			log.Println("forward remote error,", err)
+			log.Println("forward remote error", err)
 			continue
 		}
 		go c.ListenRemote(conf)
 	}
 }
 func (c *Wspc) ListenRemote(conf *msg.WspConfig) {
-	log.Println("listen remote on channel", conf.Channel())
 	id := ksuid.New().String()
 	trans := func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
@@ -30,10 +29,15 @@ func (c *Wspc) ListenRemote(conf *msg.WspConfig) {
 		}
 		c.channel.Store(conf.Channel(), conf)
 	}
-	if err := c.wan.Dail(id, conf, trans); err != nil {
+	retryNum := 0
+	for err := c.wan.Dail(id, conf, trans); err != nil; retryNum++ {
 		log.Println(err)
-		return
+		if retryNum > 0 {
+			return
+		}
+		time.Sleep(3 * time.Second)
 	}
+	log.Println("listen remote on channel", conf.Channel())
 }
 
 func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
@@ -61,7 +65,7 @@ func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
 	}
 
 	_, repeater := c.wan.NewTCPChannel(id, conn)
-	
+
 	if err = c.wan.Succeed(id); err != nil {
 		repeater.Interrupt()
 		return err
