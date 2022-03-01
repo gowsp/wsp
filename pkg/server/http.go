@@ -148,7 +148,7 @@ type ProxyConn struct {
 	rw     sync.RWMutex
 }
 
-func (c *ProxyConn) Relay(data *msg.Data) error {
+func (c *ProxyConn) Transport(data *msg.Data) error {
 	c.rw.Lock()
 	defer c.rw.Unlock()
 

@@ -159,7 +159,7 @@ func (p *Socks5Proxy) replies(addr string, reader io.Reader, conn net.Conn) {
 
 	trans := func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
-			conn.Write([]byte{0x05, 0x05, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+			conn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 			log.Printf("close socks5 proxy %s, %s\n", addr, message.Data)
 			conn.Close()
 			return

@@ -1,153 +1,93 @@
 package wsp
 
 import (
-	"context"
-	"log"
 	"net/http"
-	"os"
-	"os/signal"
-	"syscall"
 	"testing"
-	"time"
 
 	"github.com/gowsp/wsp/pkg/client"
 	"github.com/gowsp/wsp/pkg/server"
 )
 
-func TestShutdown(t *testing.T) {
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Println("Shutting down server...")
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	log.Println(ctx)
-
-	log.Println("Server exiting")
-}
-
 func TestServer(t *testing.T) {
 	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
 	http.ListenAndServe(":8080", wsps)
 }
-func TestClient(t *testing.T) {
-	client := client.Wspc{Config: &client.Config{
-		Auth:    "auth",
-		Server:  "ws://127.0.0.1:8080/proxy",
-		Dynamic: []string{"socks5://ssh:passwod@127.0.0.1:1088"},
-		Remote: []string{
-			"tcp://ssh:ssh@192.168.1.200:22",
-			"tcp://rdp:rdp@192.168.1.200:3389",
-		},
-	}}
-	client.ListenAndServe()
-}
-func TestSocks5Proxy(t *testing.T) {
-	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
-	go http.ListenAndServe(":8080", wsps)
-	time.Sleep(1 * time.Second)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
+func TestProxyClient(t *testing.T) {
 	client := client.NewWspc(&client.Config{
-		Auth:    "auth",
-		Server:  "ws://127.0.0.1:8080/proxy",
-		Dynamic: []string{"socks5://:1088"},
+		Auth:   "auth",
+		Server: "ws://127.0.0.1:8080/proxy",
+		Dynamic: []string{
+			"socks5://:1080",
+			"http://:8088",
+		},
 	})
 	client.ListenAndServe()
-	<-c
-	log.Println("closed")
 }
-
-func TestHTTPProxy(t *testing.T) {
-	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
-	go http.ListenAndServe(":8080", wsps)
-	time.Sleep(1 * time.Second)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	client := client.Wspc{Config: &client.Config{
-		Auth:    "auth",
-		Server:  "ws://127.0.0.1:8080/proxy",
-		Dynamic: []string{"http://:1088"},
-	}}
-	client.ListenAndServe()
-	<-c
-	log.Println("closed")
-}
-
-func TestTCPOverHTTPProxy(t *testing.T) {
-	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
-	go http.ListenAndServe(":8080", wsps)
-	time.Sleep(1 * time.Second)
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-	client := client.Wspc{Config: &client.Config{
+func TestProxyServer(t *testing.T) {
+	go client.NewWspc(&client.Config{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
-		Remote: []string{"tcp://10.0.0.4:5900?mode=path&value=vnc"},
-	}}
-	client.ListenAndServe()
-	<-c
-	log.Println("closed")
-}
-
-func TestProxy(t *testing.T) {
-	wsps := server.NewWsps(&server.Config{Auth: "auth", Path: "/proxy"})
-	go http.ListenAndServe(":8080", wsps)
-	time.Sleep(1 * time.Second)
-
-	sshConfig := &client.Config{
+		Remote: []string{
+			"tunnel://dynamic:vpn@",
+		},
+	}).ListenAndServe()
+	client.NewWspc(&client.Config{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
-		Remote: []string{"tcp://ssh:ssh@10.0.0.2:22"},
-	}
-	l := client.NewWspc(sshConfig)
-	go l.ListenAndServe()
-	time.Sleep(1 * time.Second)
-	v := client.NewWspc(sshConfig)
-	go v.ListenAndServe()
-	time.Sleep(1 * time.Second)
-
-	config := &client.Config{
-		Auth:   "auth",
-		Server: "ws://127.0.0.1:8080/proxy",
-		Local:  []string{"tcp://ssh:ssh@127.0.0.1:2200"},
-	}
-	r := client.NewWspc(config)
-	go r.ListenAndServe()
-	s := make(chan os.Signal, 1)
-	signal.Notify(s, os.Interrupt)
-	<-s
+		Dynamic: []string{
+			"socks5://home:vpn@:8020",
+		},
+	}).ListenAndServe()
 }
-
-func TestHttp(t *testing.T) {
-	wsps := server.NewWsps(&server.Config{Auth: "auth"})
-	go http.ListenAndServe(":8080", wsps)
-	time.Sleep(1 * time.Second)
-
+func TestReverseProxy(t *testing.T) {
 	server := http.NewServeMux()
-	server.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		msg := "index"
-		rw.Write([]byte(msg))
+	server.HandleFunc("/api/users", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Write([]byte(r.RequestURI))
 	})
-	server.HandleFunc("/api", func(rw http.ResponseWriter, r *http.Request) {
-		msg := "api"
-		rw.Write([]byte(msg))
+	server.HandleFunc("/api/groups", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Write([]byte(r.RequestURI))
 	})
 	web := http.Server{Handler: server, Addr: ":8010"}
 	go web.ListenAndServe()
-
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt)
-
-	client := client.Wspc{Config: &client.Config{Auth: "auth",
-		Server: "ws://127.0.0.1:8080",
-		Remote: []string{"http://127.0.0.1:8010?mode=path&value=api"},
-	}}
+	// http://127.0.0.1:8010/api/users
+	// http://127.0.0.1:8010/api/groups
+	client := client.NewWspc(&client.Config{
+		Auth:   "auth",
+		Server: "ws://127.0.0.1:8080/proxy",
+		Remote: []string{
+			"http://127.0.0.1:8010?mode=path&value=local",
+			"http://127.0.0.1:8010/api/?mode=path&value=wuzk",
+		},
+	})
+	// http://127.0.0.1:8080/local/api/users
+	// http://127.0.0.1:8080/local/api/groups
+	// http://127.0.0.1:8080/wuzk/users
+	// http://127.0.0.1:8080/wuzk/groups
 	client.ListenAndServe()
-	<-c
-	log.Println("closed")
+}
+func TestTCPOverWs(t *testing.T) {
+	client.NewWspc(&client.Config{
+		Auth:   "auth",
+		Server: "ws://127.0.0.1:8080/proxy",
+		Remote: []string{
+			"tcp://127.0.0.1:5900?mode=path&value=test",
+		},
+	}).ListenAndServe()
+}
+
+func TestTunnel(t *testing.T) {
+	go client.NewWspc(&client.Config{
+		Auth:   "auth",
+		Server: "ws://127.0.0.1:8080/proxy",
+		Remote: []string{
+			"tcp://ssh:pwd@192.168.7.171:22",
+		},
+	}).ListenAndServe()
+	client.NewWspc(&client.Config{
+		Auth:   "auth",
+		Server: "ws://127.0.0.1:8080/proxy",
+		Local: []string{
+			"tcp://ssh:pwd@127.0.0.1:2202",
+		},
+	}).ListenAndServe()
 }
