@@ -20,7 +20,7 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	client := client.Wspc{Config: config}
+	client := client.NewWspc(config)
 	go client.ListenAndServe()
 	<-ctx.Done()
 	client.Interrupt()
