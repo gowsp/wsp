@@ -1,6 +1,6 @@
 module github.com/gowsp/wsp
 
-go 1.17
+go 1.18
 
 require (
 	github.com/segmentio/ksuid v1.0.4
@@ -8,4 +8,7 @@ require (
 	nhooyr.io/websocket v1.8.7
 )
 
-require github.com/klauspost/compress v1.13.6 // indirect
+require (
+	github.com/klauspost/compress v1.10.3 // indirect
+	gopkg.in/yaml.v2 v2.4.0 // indirect
+)

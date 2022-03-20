@@ -12,17 +12,6 @@ import (
 	"nhooyr.io/websocket"
 )
 
-type Config struct {
-	Host string `json:"host,omitempty"`
-	Auth string `json:"auth,omitempty"`
-	Path string `json:"path,omitempty"`
-	Port uint16 `json:"port,omitempty"`
-}
-
-func (c *Config) clean() {
-	c.Path = strings.TrimPrefix(c.Path, "/")
-	c.Path = strings.TrimSpace(c.Path)
-}
 func NewWsps(config *Config) http.Handler {
 	return NewWspsWithHandler(config, http.NotFoundHandler())
 }

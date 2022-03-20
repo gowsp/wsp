@@ -2,11 +2,8 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -14,11 +11,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gowsp/wsp/internal/cmd"
 	"github.com/gowsp/wsp/pkg/server"
 )
 
+var date string
+var version string
+
 func main() {
-	config, err := parseConf()
+	config := &server.Config{}
+	err := cmd.ParseConfig(config, cmd.NewVersion(date, version))
 	if err != nil {
 		log.Println(err)
 		return
@@ -43,20 +45,4 @@ func main() {
 		log.Fatal("wsps forced to shutdown:", err)
 	}
 	log.Println("wsps exiting")
-}
-
-func parseConf() (*server.Config, error) {
-	configVar := flag.String("c", "wsps.json", "wsps config file ")
-	flag.Parse()
-	file, err := os.Open(*configVar)
-	if err != nil {
-		return nil, err
-	}
-	conf, err := io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-	var config server.Config
-	err = json.Unmarshal(conf, &config)
-	return &config, err
 }

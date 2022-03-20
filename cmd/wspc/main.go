@@ -2,18 +2,20 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"flag"
-	"io"
 	"log"
 	"os"
 	"os/signal"
 
+	"github.com/gowsp/wsp/internal/cmd"
 	"github.com/gowsp/wsp/pkg/client"
 )
 
+var date string
+var version string
+
 func main() {
-	config, err := parseConf()
+	config := &client.Config{}
+	err := cmd.ParseConfig(config, cmd.NewVersion(date, version))
 	if err != nil {
 		log.Println(err)
 		return
@@ -25,20 +27,4 @@ func main() {
 	<-ctx.Done()
 	client.Interrupt()
 	log.Println("wspc closed")
-}
-
-func parseConf() (*client.Config, error) {
-	configVar := flag.String("c", "wspc.json", "wspc config file")
-	flag.Parse()
-	file, err := os.Open(*configVar)
-	if err != nil {
-		return nil, err
-	}
-	conf, err := io.ReadAll(file)
-	if err != nil {
-		return nil, err
-	}
-	var config client.Config
-	err = json.Unmarshal(conf, &config)
-	return &config, err
 }

@@ -73,5 +73,8 @@ func (w *Wan) Succeed(id string) (err error) {
 	return w.reply(id, true, "")
 }
 func (w *Wan) Close() {
+	if w == nil || w.conn == nil {
+		return
+	}
 	w.conn.Close(websocket.StatusNormalClosure, "normal close")
 }

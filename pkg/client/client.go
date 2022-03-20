@@ -16,14 +16,6 @@ import (
 	"nhooyr.io/websocket"
 )
 
-type Config struct {
-	Auth    string   `json:"auth,omitempty"`
-	Server  string   `json:"server,omitempty"`
-	Local   []string `json:"local,omitempty"`
-	Remote  []string `json:"remote,omitempty"`
-	Dynamic []string `json:"dynamic,omitempty"`
-}
-
 func NewWspc(config *Config) *Wspc {
 	wspc := &Wspc{Config: config, routing: proxy.NewRouting()}
 	return wspc
