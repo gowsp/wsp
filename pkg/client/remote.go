@@ -17,27 +17,27 @@ func (c *Wspc) RemoteForward() {
 			log.Println("forward remote error", err)
 			continue
 		}
-		go c.ListenRemote(conf)
+		go c.ListenRemote(conf, 3)
 	}
 }
-func (c *Wspc) ListenRemote(conf *msg.WspConfig) {
+func (c *Wspc) ListenRemote(conf *msg.WspConfig, retry int) {
+	if retry == 0 {
+		return
+	}
 	id := ksuid.New().String()
 	trans := func(data *msg.Data, message *msg.WspResponse) {
 		if message.Code == msg.WspCode_FAILED {
 			log.Println("err", message.Data)
+			time.Sleep(time.Second * 3)
+			c.ListenRemote(conf, retry-1)
 			return
 		}
 		c.channel.Store(conf.Channel(), conf)
+		log.Println("listen remote on channel", conf.Channel())
 	}
-	retryNum := 0
-	for err := c.wan.Dail(id, conf, trans); err != nil; retryNum++ {
+	if err := c.wan.Dail(id, conf, trans); err != nil {
 		log.Println(err)
-		if retryNum > 0 {
-			return
-		}
-		time.Sleep(3 * time.Second)
 	}
-	log.Println("listen remote on channel", conf.Channel())
 }
 
 func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
