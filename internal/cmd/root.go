@@ -20,7 +20,7 @@ type CmdConfig interface {
 func ParseConfig(config CmdConfig, version Version) error {
 	config.BindFlag()
 	flag.BoolVar(&printVersion, "v", false, "print version and exit")
-	flag.StringVar(&configFile, "F", "wsp.json", "Specifies an alternative per-user configuration file")
+	flag.StringVar(&configFile, "c", "", "Specifies an alternative per-user configuration file")
 	flag.Parse()
 
 	if printVersion {

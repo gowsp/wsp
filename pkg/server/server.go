@@ -2,12 +2,14 @@
 package server
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"sync"
 
+	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/gowsp/wsp/pkg/proxy"
 	"nhooyr.io/websocket"
 )
@@ -57,7 +59,14 @@ func (s *Wsps) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Auth") != s.config.Auth {
 		w.WriteHeader(401)
-		w.Write([]byte("Access denied!\n"))
+		w.Write([]byte("token error, access denied!\n"))
+		return
+	}
+	proto := r.Header.Get("Proto")
+	log.Printf("accept %s, proto: %s", getRemoteIP(r), proto)
+	if proto, err := msg.ParseVersion(proto); err != nil || proto.Major() != msg.PROTOCOL_VERSION.Major() {
+		w.WriteHeader(400)
+		fmt.Fprintf(w, "client proto version %s not support, server proto is %s\n", proto, msg.PROTOCOL_VERSION)
 		return
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
@@ -70,4 +79,15 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	router := &Router{wsps: s, routing: proxy.NewRouting()}
 	router.wan = proxy.NewWan(ws, router)
 	router.wan.Serve()
+}
+
+func getRemoteIP(r *http.Request) string {
+	IPAddress := r.Header.Get("X-Real-Ip")
+	if IPAddress == "" {
+		IPAddress = r.Header.Get("X-Forwarded-For")
+	}
+	if IPAddress == "" {
+		IPAddress = r.RemoteAddr
+	}
+	return IPAddress
 }

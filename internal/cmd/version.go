@@ -21,5 +21,5 @@ func NewVersion(date, version string) Version {
 func (v *Version) PrintVersion() {
 	fmt.Printf("Version: %s\n", v.version)
 	fmt.Printf("Release Date: %s\n", v.date)
-	fmt.Printf("Protocol Version: %.1f\n", msg.PROTOCOL_VERSION)
+	fmt.Printf("Protocol Version: %s\n", msg.PROTOCOL_VERSION)
 }

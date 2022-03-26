@@ -3,9 +3,10 @@ package client
 
 import (
 	"context"
-	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,14 +36,18 @@ func (c *Wspc) Routing() *proxy.Routing {
 func (c *Wspc) connectWs() error {
 	headers := make(http.Header)
 	headers.Set("Auth", c.Config.Auth)
+	headers.Set("Proto", msg.PROTOCOL_VERSION.String())
 	ws, resp, err := websocket.Dial(context.Background(),
 		c.Config.Server, &websocket.DialOptions{HTTPHeader: headers})
+	if resp.StatusCode == 400 || resp.StatusCode == 401 {
+		defer resp.Body.Close()
+		msg, _ := io.ReadAll(resp.Body)
+		log.Print(string(msg))
+		os.Exit(1)
+	}
 	if err != nil {
 		c.retry()
 		return err
-	}
-	if resp.Status == "403" {
-		return fmt.Errorf("error auth")
 	}
 	c.wan = proxy.NewWan(ws, c)
 	go c.wan.HeartBeat(time.Second * 30)
