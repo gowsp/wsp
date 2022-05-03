@@ -12,11 +12,11 @@ type DynamicProxy interface {
 	Listen()
 
 	// ServeConn conn by wspc
-	ServeConn(conn net.Conn)
+	ServeConn(conn net.Conn) error
 }
 
 func (c *Wspc) DynamicForward() {
-	for _, val := range c.Config.Dynamic {
+	for _, val := range c.config.Dynamic {
 		conf, err := msg.NewWspConfig(msg.WspType_DYNAMIC, val)
 		if err != nil {
 			log.Println("forward dynamic error,", err)

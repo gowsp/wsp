@@ -1,77 +1,43 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
 	"nhooyr.io/websocket"
 )
 
-func (r *Router) ServeHTTP(channel string, rw http.ResponseWriter, req *http.Request) {
-	val, ok := r.channel.Load(channel)
-	if !ok {
-		r.wsps.Remove(channel)
-		http.Error(rw, "router not exist", 404)
-		return
-	}
-	conf := val.(*msg.WspConfig)
+func (r *conn) ServeHTTP(channel string, rw http.ResponseWriter, req *http.Request) {
+	conf, _ := r.LoadConfig(channel)
 	if conf.IsHTTP() {
 		r.ServeHTTPProxy(conf, rw, req)
 	} else {
 		r.ServeNetProxy(conf, rw, req)
 	}
 }
-func (r *Router) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
+func (r *conn) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
 	id := ksuid.New().String()
-	response := make(chan *msg.WspResponse)
-	trans := func(data *msg.Data, res *msg.WspResponse) {
-		response <- res
-	}
-	if err := r.wan.Dail(id, conf, trans); err != nil {
-		http.Error(w, "router dail error", 500)
-		return
-	}
-	var res *msg.WspResponse
-	select {
-	case res = <-response:
-	case <-time.After(time.Second * 5):
-		res = &msg.WspResponse{Code: msg.WspCode_FAILED, Data: "time out"}
-	}
-	if res.Code == msg.WspCode_FAILED {
-		r.routing.Delete(id)
-		http.Error(w, "router not avaiable", 400)
-		return
-	}
-	ws, err := websocket.Accept(w, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
-	if err != nil {
-		log.Printf("websocket accept %v", err)
-		return
-	}
-	conn := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
-	_, repeater := r.wan.NewTCPChannel(id, conn)
-	repeater.Copy()
+	signal := make(chan struct{})
+	r.channel.NewSession(id, conf, &wsLinker{req, w, signal}, nil).Syn()
+	<-signal
 }
-func (r *Router) ServeHTTPProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
+func (r *conn) ServeHTTPProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
 	proxy := r.NewHTTPProxy(conf)
 	if proxy == nil {
 		return
 	}
 	proxy.ServeHTTP(w, req)
 }
-func (r *Router) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
+func (r *conn) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
 	channel := conf.Channel()
 	c, ok := r.http.Load(channel)
 	if ok {
@@ -90,43 +56,65 @@ func (r *Router) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
 			prepare(r)
 		}
 	}
-	p.Transport = &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			id := ksuid.New().String()
-			response := make(chan *msg.WspResponse)
-			trans := func(data *msg.Data, res *msg.WspResponse) {
-				response <- res
-			}
-			if err := r.wan.Dail(id, conf, trans); err != nil {
-				return nil, err
-			}
-			var res *msg.WspResponse
-			select {
-			case res = <-response:
-			case <-time.After(time.Second * 5):
-				res = &msg.WspResponse{Code: msg.WspCode_FAILED, Data: "time out"}
-			}
-			if res.Code == msg.WspCode_FAILED {
-				return nil, errors.New(res.Data)
-			}
-			writer := r.wan.NewWriter(id)
-			conn := NewProxyConn(writer)
-			r.routing.AddRepeater(id, conn.(proxy.Channel))
-			return conn, nil
-		},
-		ForceAttemptHTTP2:     true,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		id := ksuid.New().String()
+		writer := r.channel.NewWriter(id)
+		conn := NewProxyConn(writer)
+		signal := make(chan error)
+		err := r.channel.NewSession(id, conf, &httpLinker{conn, signal}, conn).Syn()
+		if err != nil {
+			return nil, err
+		}
+		err = <-signal
+		return conn, err
 	}
+	p.Transport = transport
 	r.http.Store(channel, p)
 	return p
 }
 
-func NewProxyConn(writer io.WriteCloser) net.Conn {
-	buff := proxy.GetBuffer()
-	return &ProxyConn{input: buff, output: writer, sign: make(chan struct{}, 8)}
+type wsLinker struct {
+	req    *http.Request
+	w      http.ResponseWriter
+	signal chan struct{}
+}
+
+func (l *wsLinker) InActive(err error) {
+	http.Error(l.w, err.Error(), 400)
+	l.signal <- struct{}{}
+}
+
+func (l *wsLinker) Active(session *channel.Session) error {
+	ws, err := websocket.Accept(l.w, l.req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
+	l.signal <- struct{}{}
+	if err != nil {
+		log.Printf("websocket accept %v", err)
+		return err
+	}
+	conn := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
+	session.CopyFrom(conn)
+	return nil
+}
+
+type httpLinker struct {
+	conn   net.Conn
+	signal chan error
+}
+
+func (l *httpLinker) InActive(err error) {
+	l.conn.Close()
+	l.signal <- err
+}
+
+func (l *httpLinker) Active(session *channel.Session) error {
+	l.signal <- nil
+	return nil
+}
+
+func NewProxyConn(writer io.Writer) *ProxyConn {
+	r, w := io.Pipe()
+	return &ProxyConn{ws: writer, input: w, output: r}
 }
 
 type wpsAddr struct {
@@ -141,60 +129,23 @@ func (a wpsAddr) String() string {
 }
 
 type ProxyConn struct {
-	input  *bytes.Buffer
-	output io.WriteCloser
-	closed uint32
-	sign   chan struct{}
-	rw     sync.RWMutex
+	ws     io.Writer
+	input  io.WriteCloser
+	output io.ReadCloser
 }
 
 func (c *ProxyConn) Transport(data *msg.Data) error {
-	c.rw.Lock()
-	defer c.rw.Unlock()
-
 	_, err := c.input.Write(data.Payload())
-	c.sign <- struct{}{}
 	return err
 }
-func (c *ProxyConn) Interrupt() error {
-	return c.Close()
-}
-
 func (c *ProxyConn) Read(b []byte) (n int, err error) {
-	if atomic.LoadUint32(&c.closed) > 0 {
-		return 0, io.EOF
-	}
-	c.rw.RLock()
-	n, err = c.input.Read(b)
-	c.rw.RUnlock()
-	if n > 0 {
-		return
-	}
-	select {
-	case <-c.sign:
-		c.rw.RLock()
-		n, err = c.input.Read(b)
-		c.rw.RUnlock()
-	case <-time.After(time.Second * 10):
-	}
-	if err == io.EOF {
-		err = nil
-	}
-	return
+	return c.output.Read(b)
 }
-
 func (c *ProxyConn) Write(b []byte) (n int, err error) {
-	return c.output.Write(b)
+	return c.ws.Write(b)
 }
-
 func (c *ProxyConn) Close() error {
-	if atomic.LoadUint32(&c.closed) > 0 {
-		return nil
-	}
-	atomic.AddUint32(&c.closed, 1)
-	c.input.Reset()
-	proxy.PutBuffer(c.input)
-	return c.output.Close()
+	return c.input.Close()
 }
 
 func (c *ProxyConn) LocalAddr() net.Addr {

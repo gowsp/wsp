@@ -4,22 +4,25 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/gowsp/wsp/pkg/proxy"
 )
 
-func (r *Router) AddRemote(id string, conf *msg.WspConfig) error {
+func (c *conn) AddRemote(id string, conf *msg.WspConfig) error {
 	channel := conf.Channel()
+	if channel == "" {
+		return fmt.Errorf("channel %s is illegal or empty", channel)
+	}
 	switch conf.Mode() {
 	case "path":
-		if conf.Value() == r.Config().Path {
+		if conf.Value() == c.config().Path {
 			return fmt.Errorf("setting the same path as wsps is not allowed")
 		}
 	case "domain":
 		switch {
-		case r.Config().Host == "":
+		case c.config().Host == "":
 			return fmt.Errorf("wsps does not set host, domain method is not allowed")
-		case r.Config().Host == conf.Value():
+		case c.config().Host == conf.Value():
 			return fmt.Errorf("setting the same domain as wsps is not allowed")
 		}
 	default:
@@ -27,41 +30,47 @@ func (r *Router) AddRemote(id string, conf *msg.WspConfig) error {
 			return fmt.Errorf("unsupported http mode %s", conf.Mode())
 		}
 	}
-	if r.wsps.Exist(channel) {
+	if c.wsps.Exist(channel) {
 		return fmt.Errorf("channel %s already registered", channel)
 	}
+	if err := c.channel.Reply(id, msg.WspCode_SUCCESS, ""); err != nil {
+		return err
+	}
 	log.Println("register channel", channel)
-	r.wan.Succeed(id)
-	r.wsps.Store(channel, r)
-	r.channel.Store(channel, conf)
+	c.wsps.Store(channel, c)
+	c.configs.Store(channel, conf)
 	return nil
 }
 
-func (r *Router) NewRemoteConn(id string, conf *msg.WspConfig) error {
-	key := conf.Channel()
-	if val, ok := r.wsps.LoadRouter(key); ok {
-		log.Printf("start bridge channel %s\n", key)
-		remote := val.(*Router)
+type bridge struct {
+	id     string
+	config *msg.WspConfig
+	local  *channel.Channel
+	output *channel.Channel
+}
 
-		_, ok := remote.channel.Load(key)
+func (l *bridge) InActive(err error) {
+	l.local.Reply(l.id, msg.WspCode_FAILED, err.Error())
+}
+
+func (l *bridge) Active(session *channel.Session) error {
+	l.local.Bridge(l.id, l.config, l.output)
+	return l.local.Reply(l.id, msg.WspCode_SUCCESS, "")
+}
+
+func (c *conn) NewRemoteConn(id string, conf *msg.WspConfig) error {
+	key := conf.Channel()
+	if val, ok := c.wsps.LoadRouter(key); ok {
+		log.Printf("start bridge channel %s\n", key)
+		remote := val.(*conn)
+
+		config, ok := remote.configs.Load(key)
 		if !ok {
 			return fmt.Errorf("channel not registered")
 		}
-		trans := func(wm *msg.Data, res *msg.WspResponse) {
-			if res.Code == msg.WspCode_SUCCESS {
-				remoteWirter := proxy.NewWsRepeater(id, remote.wan)
-				r.routing.AddRepeater(id, remoteWirter)
-				localWriter := proxy.NewWsRepeater(id, r.wan)
-				remote.routing.AddRepeater(id, localWriter)
-			} else {
-				remote.routing.DeleteConn(id)
-			}
-			r.wan.Write(*wm.Raw)
-		}
-
-		if err := remote.wan.Dail(id, conf, trans); err != nil {
-			return err
-		}
+		w := c.channel.NewWsWriter(id)
+		l := &bridge{id, config.(*msg.WspConfig), c.channel, remote.channel}
+		remote.channel.NewSession(id, conf, l, w).Syn()
 		return nil
 	}
 	return fmt.Errorf("channel not registered")

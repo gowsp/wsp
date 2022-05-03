@@ -10,18 +10,8 @@ import (
 	"sync"
 
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/gowsp/wsp/pkg/proxy"
 	"nhooyr.io/websocket"
 )
-
-func NewWsps(config *Config) http.Handler {
-	return NewWspsWithHandler(config, http.NotFoundHandler())
-}
-func NewWspsWithHandler(config *Config, handler http.Handler) http.Handler {
-	config.clean()
-	wsps := &Wsps{config: config, handler: handler}
-	return wsps
-}
 
 type Wsps struct {
 	config  *Config
@@ -29,12 +19,20 @@ type Wsps struct {
 	handler http.Handler
 }
 
+func New(config *Config) http.Handler {
+	return NewWithHandler(config, http.NotFoundHandler())
+}
+func NewWithHandler(config *Config, handler http.Handler) http.Handler {
+	config.clean()
+	wsps := &Wsps{config: config, handler: handler}
+	return wsps
+}
+
 func (s *Wsps) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	host, _, _ := net.SplitHostPort(r.Host)
 	channel := "http:domain:" + host
 	if val, ok := s.LoadRouter(channel); ok {
-		router := val.(*Router)
-		router.ServeHTTP(channel, rw, r)
+		val.(*conn).ServeHTTP(channel, rw, r)
 		return
 	}
 	path := strings.TrimPrefix(r.URL.Path, "/")
@@ -49,8 +47,7 @@ func (s *Wsps) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	}
 	channel = "http:path:" + paths[0]
 	if val, ok := s.LoadRouter(channel); ok {
-		router := val.(*Router)
-		router.ServeHTTP(channel, rw, r)
+		val.(*conn).ServeHTTP(channel, rw, r)
 		return
 	}
 	s.handler.ServeHTTP(rw, r)
@@ -76,9 +73,8 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	defer ws.Close(websocket.StatusNormalClosure, "close connect")
 
-	router := &Router{wsps: s, routing: proxy.NewRouting()}
-	router.wan = proxy.NewWan(ws, router)
-	router.wan.Serve()
+	router := &conn{wsps: s}
+	router.ListenAndServe(ws)
 }
 
 func getRemoteIP(r *http.Request) string {

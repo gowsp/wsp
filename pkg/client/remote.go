@@ -6,54 +6,67 @@ import (
 	"net"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/segmentio/ksuid"
 )
 
-func (c *Wspc) RemoteForward() {
-	for _, val := range c.Config.Remote {
+type remoteRegister struct {
+	c      *Wspc
+	config *msg.WspConfig
+}
+
+func (l *remoteRegister) InActive(err error) {
+	log.Println("error:", err.Error())
+}
+func (l *remoteRegister) Active(session *channel.Session) error {
+	log.Println("listen remote on channel", l.config.Channel())
+	l.c.configs.Store(l.config.Channel(), l.config)
+	return nil
+}
+
+func (c *Wspc) Register() {
+	for _, val := range c.config.Remote {
 		conf, err := msg.NewWspConfig(msg.WspType_REMOTE, val)
 		if err != nil {
 			log.Println("forward remote error", err)
 			continue
 		}
-		go c.ListenRemote(conf, 3)
-	}
-}
-func (c *Wspc) ListenRemote(conf *msg.WspConfig, retry int) {
-	if retry == 0 {
-		return
-	}
-	id := ksuid.New().String()
-	trans := func(data *msg.Data, message *msg.WspResponse) {
-		if message.Code == msg.WspCode_FAILED {
-			log.Println("err", message.Data)
-			time.Sleep(time.Second * 3)
-			c.ListenRemote(conf, retry-1)
-			return
-		}
-		c.channel.Store(conf.Channel(), conf)
-		log.Println("listen remote on channel", conf.Channel())
-	}
-	if err := c.wan.Dail(id, conf, trans); err != nil {
-		log.Println(err)
+		id := ksuid.New().String()
+		c.channel.NewSession(id, conf, &remoteRegister{c, conf}, nil).Syn()
 	}
 }
 
-func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
+type remoteLinker struct {
+	conn    net.Conn
+	channel string
+}
+
+func (l *remoteLinker) InActive(err error) {
+	log.Println("open remote", l.channel, err.Error())
+}
+func (l *remoteLinker) Active(session *channel.Session) error {
+	go func() {
+		session.CopyFrom(l.conn)
+		log.Printf("close %s connection\n", l.channel)
+	}()
+	return nil
+}
+
+func (c *Wspc) NewConn(id string, req *msg.WspRequest) error {
+	remote, err := req.ToConfig()
+	if err != nil {
+		return err
+	}
 	channel := remote.Channel()
 	log.Printf("received %s connection\n", channel)
-	defer log.Printf("close %s connection\n", channel)
-	val, ok := c.channel.Load(channel)
-	if !ok {
-		return fmt.Errorf(channel + " not found")
+	conf, err := c.LoadConfig(channel)
+	if err != nil {
+		return err
 	}
-
-	conf := val.(*msg.WspConfig)
 	if conf.Paasowrd() != remote.Paasowrd() {
 		return fmt.Errorf("%s password is incorrect", channel)
 	}
-	var err error
 	var conn net.Conn
 	if conf.IsTunnel() {
 		conn, err = net.DialTimeout(remote.Network(), remote.Address(), 5*time.Second)
@@ -63,14 +76,6 @@ func (c *Wspc) NewRemoteConn(id string, remote *msg.WspConfig) error {
 	if err != nil {
 		return err
 	}
-
-	_, repeater := c.wan.NewTCPChannel(id, conn)
-
-	if err = c.wan.Succeed(id); err != nil {
-		repeater.Interrupt()
-		return err
-	}
-
-	repeater.Copy()
-	return nil
+	l := &remoteLinker{conn: conn, channel: channel}
+	return c.channel.NewTcpSession(id, remote, l, conn).Ack()
 }

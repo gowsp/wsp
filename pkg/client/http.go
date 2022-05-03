@@ -2,14 +2,15 @@ package client
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 
+	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/gowsp/wsp/pkg/proxy"
 	"github.com/segmentio/ksuid"
 )
 
@@ -36,46 +37,46 @@ func (p *HTTPProxy) Listen() {
 		go p.ServeConn(conn)
 	}
 }
-func (p *HTTPProxy) ServeConn(conn net.Conn) {
-	c := p.wspc
-	buffer := proxy.GetBuffer()
+
+func (p *HTTPProxy) ServeConn(conn net.Conn) error {
+	buffer := new(bytes.Buffer)
 	reader := bufio.NewReader(io.TeeReader(conn, buffer))
 	reqeust, err := http.ReadRequest(reader)
 	if err != nil {
-		log.Println(err)
-		return
+		return err
 	}
 	addr := reqeust.URL.Host
-	isConnect := reqeust.Method == http.MethodConnect
+	ssl := reqeust.Method == http.MethodConnect
 	if strings.LastIndexByte(reqeust.URL.Host, ':') == -1 {
 		addr = addr + ":80"
 	}
+	conf := p.conf.DynamicAddr(addr)
 	log.Println("open http proxy", addr)
 	id := ksuid.New().String()
+	l := &httpProxyLinker{addr: addr, conn: conn, buff: buffer, ssl: ssl}
+	return p.wspc.channel.NewTcpSession(id, conf, l, conn).Syn()
+}
 
-	trans := func(data *msg.Data, message *msg.WspResponse) {
-		if message.Code == msg.WspCode_FAILED {
-			proxy.PutBuffer(buffer)
-			conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))
-			log.Printf("close http proxy %s, %s\n", addr, message.Data)
-			conn.Close()
-			return
-		}
-		in, repeater := c.wan.NewTCPChannel(id, conn)
-		if isConnect {
-			conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+type httpProxyLinker struct {
+	addr string
+	ssl  bool
+	conn net.Conn
+	buff *bytes.Buffer
+}
+
+func (l *httpProxyLinker) InActive(err error) {
+	l.conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))
+	log.Println("close http proxy", l.addr, err.Error())
+}
+func (l *httpProxyLinker) Active(session *channel.Session) error {
+	go func() {
+		if l.ssl {
+			l.conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
 		} else {
-			in.Write(buffer.Bytes())
+			session.Write(l.buff.Bytes())
 		}
-		proxy.PutBuffer(buffer)
-		repeater.Copy()
-		log.Println("close http proxy", addr)
-	}
-	config := p.conf.DynamicAddr(addr)
-	if err := c.wan.Dail(id, config, trans); err != nil {
-		proxy.PutBuffer(buffer)
-		conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))
-		log.Printf("close http proxy %s, %s\n", addr, err.Error())
-		conn.Close()
-	}
+		session.CopyFrom(l.conn)
+		log.Println("close http proxy", l.addr)
+	}()
+	return nil
 }

@@ -4,49 +4,47 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/gowsp/wsp/pkg/proxy"
-	"google.golang.org/protobuf/proto"
+	"nhooyr.io/websocket"
 )
 
-type Router struct {
-	channel sync.Map
-	http    sync.Map
+type conn struct {
 	wsps    *Wsps
-	wan     *proxy.Wan
-	routing *proxy.Routing
+	http    sync.Map
+	configs sync.Map
+	channel *channel.Channel
 }
 
-func (r *Router) Routing() *proxy.Routing {
-	return r.routing
-}
-func (r *Router) Config() *Config {
-	return r.wsps.config
+func (c *conn) config() *Config {
+	return c.wsps.config
 }
 
-func (r *Router) Close() error {
-	r.wsps.Delete(r.channel)
-	return nil
+func (c *conn) ListenAndServe(ws *websocket.Conn) {
+	c.channel = channel.New(ws, c.NewConn)
+	c.channel.Serve()
+	c.wsps.Delete(c.configs)
 }
 
-func (r *Router) NewConn(message *msg.WspMessage) error {
-	var req msg.WspRequest
-	err := proto.Unmarshal(message.Data, &req)
-	if err != nil {
-		return err
-	}
+func (c *conn) NewConn(id string, req *msg.WspRequest) error {
 	conf, err := req.ToConfig()
 	if err != nil {
 		return err
 	}
 	switch req.Type {
 	case msg.WspType_DYNAMIC:
-		return r.NewDynamic(message.Id, conf)
+		return c.NewDynamic(id, conf)
 	case msg.WspType_LOCAL:
-		return r.NewRemoteConn(message.Id, conf)
+		return c.NewRemoteConn(id, conf)
 	case msg.WspType_REMOTE:
-		return r.AddRemote(message.Id, conf)
+		return c.AddRemote(id, conf)
 	default:
 		return fmt.Errorf("unknown %v", req.Type)
 	}
+}
+func (c *conn) LoadConfig(channel string) (*msg.WspConfig, error) {
+	if val, ok := c.configs.Load(channel); ok {
+		return val.(*msg.WspConfig), nil
+	}
+	return nil, fmt.Errorf(channel + " not found")
 }

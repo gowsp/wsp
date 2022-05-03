@@ -25,7 +25,7 @@ func main() {
 		log.Println(err)
 		return
 	}
-	wsps := server.NewWsps(config)
+	wsps := server.New(config)
 	addr := fmt.Sprintf(":%d", config.Port)
 	srv := &http.Server{Handler: wsps, Addr: addr}
 	go func() {

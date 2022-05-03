@@ -22,9 +22,8 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	client := client.NewWspc(config)
+	client := client.New(config)
 	go client.ListenAndServe()
 	<-ctx.Done()
-	client.Interrupt()
 	log.Println("wspc closed")
 }

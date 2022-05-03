@@ -5,10 +5,28 @@ import (
 	"net"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
-func (r *Router) NewDynamic(id string, conf *msg.WspConfig) error {
+type localLinker struct {
+	addr string
+	conn net.Conn
+}
+
+func (l *localLinker) InActive(err error) {
+	log.Println("close proxy", l.addr)
+}
+
+func (l *localLinker) Active(session *channel.Session) error {
+	go func() {
+		session.CopyFrom(l.conn)
+		log.Println("close proxy", l.addr)
+	}()
+	return nil
+}
+
+func (c *conn) NewDynamic(id string, conf *msg.WspConfig) error {
 	addr := conf.Address()
 	log.Println("open proxy", addr)
 
@@ -16,14 +34,6 @@ func (r *Router) NewDynamic(id string, conf *msg.WspConfig) error {
 	if err != nil {
 		return err
 	}
-
-	_, repeater := r.wan.NewTCPChannel(id, conn)
-	
-	if err = r.wan.Succeed(id); err != nil {
-		repeater.Interrupt()
-		return err
-	}
-	repeater.Copy()
-	log.Println("close proxy", addr)
-	return nil
+	l := &localLinker{conn: conn, addr: addr}
+	return c.channel.NewSession(id, conf, l, nil).Ack()
 }
