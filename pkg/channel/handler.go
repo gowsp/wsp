@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"runtime"
 
 	"github.com/gowsp/wsp/pkg/msg"
 	"google.golang.org/protobuf/proto"
@@ -14,12 +13,6 @@ import (
 )
 
 func (s *Channel) Serve() {
-	core := runtime.NumCPU()
-	if core < 4 {
-		core = 4
-	}
-	worker := NewWorkerPool(core, core*2)
-	worker.Start()
 	for {
 		mt, data, err := s.conn.Read(context.Background())
 		if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
@@ -31,19 +24,14 @@ func (s *Channel) Serve() {
 			}
 			break
 		}
-		worker.Submit(func() {
-			if err := s.process(mt, data); err != nil {
-				log.Println(err)
-			}
-		})
+		if err := s.process(mt, data); err != nil {
+			log.Println(err)
+		}
 	}
 	s.session.Range(func(key, value interface{}) bool {
-		worker.Submit(func() {
-			value.(*Session).Interrupt()
-		})
+		value.(*Session).Interrupt()
 		return true
 	})
-	worker.Close()
 }
 
 func (s *Channel) process(mt websocket.MessageType, data []byte) error {
