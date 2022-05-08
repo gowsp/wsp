@@ -17,6 +17,7 @@ type Session struct {
 	channel   *Channel
 	linker    Linker
 	writer    Writer
+	msgs      chan *msg.Data
 	close     sync.Once
 	interrupt uint32
 }
@@ -37,7 +38,7 @@ func (s *Session) Syn() error {
 	if err != nil {
 		return err
 	}
-	s.channel.session.Store(s.id, s)
+	s.active()
 	data := encode(s.id, msg.WspCmd_CONNECT, addr)
 	_, err = s.channel.Write(data)
 	if err != nil {
@@ -46,7 +47,7 @@ func (s *Session) Syn() error {
 	return err
 }
 func (s *Session) Ack() error {
-	s.channel.session.Store(s.id, s)
+	s.active()
 	if err := s.linker.Active(s); err != nil {
 		s.channel.Reply(s.id, msg.WspCode_FAILED, err.Error())
 		return s.InActive(err)
@@ -67,11 +68,19 @@ func (s *Session) SynAck(data *msg.Data) error {
 	return s.linker.Active(s)
 }
 func (s *Session) Transport(data *msg.Data) error {
-	err := s.writer.Transport(data)
-	if err != nil {
-		s.Close()
-	}
-	return err
+	s.msgs <- data
+	return nil
+}
+func (s *Session) active() {
+	s.channel.session.Store(s.id, s)
+	go func() {
+		for data := range s.msgs {
+			err := s.writer.Transport(data)
+			if err != nil {
+				s.Close()
+			}
+		}
+	}()
 }
 func (s *Session) InActive(err error) error {
 	s.linker.InActive(err)

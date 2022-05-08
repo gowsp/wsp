@@ -33,16 +33,15 @@ func New(conn *websocket.Conn, adapter Adapter) *Channel {
 	return &Channel{conn: conn, adapter: adapter}
 }
 func (c *Channel) NewSession(id string, config *msg.WspConfig, l Linker, w Writer) *Session {
-	return &Session{id: id, config: config, channel: c, linker: l, writer: w}
+	return &Session{id: id, config: config, channel: c, linker: l, writer: w, msgs: make(chan *msg.Data, 64)}
 }
 func (c *Channel) NewTcpSession(id string, config *msg.WspConfig, l Linker, conn net.Conn) *Session {
 	w := NewTcpWriter(conn, c.NewWriter(id))
-	return &Session{id: id, config: config, channel: c, linker: l, writer: w}
+	return c.NewSession(id, config, l, w)
 }
 func (c *Channel) Bridge(id string, config *msg.WspConfig, output *Channel) {
 	writer := output.NewWsWriter(id)
-	session := c.NewSession(id, config, nil, writer)
-	c.session.Store(id, session)
+	c.NewSession(id, config, nil, writer).active()
 }
 func (c *Channel) Reply(id string, code msg.WspCode, message string) (err error) {
 	res := msg.WspResponse{Code: code, Data: message}
