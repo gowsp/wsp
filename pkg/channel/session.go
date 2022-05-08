@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 
 	"github.com/gowsp/wsp/pkg/msg"
@@ -11,12 +12,13 @@ import (
 )
 
 type Session struct {
-	id      string
-	closed  uint32
-	config  *msg.WspConfig
-	channel *Channel
-	linker  Linker
-	writer  Writer
+	id        string
+	config    *msg.WspConfig
+	channel   *Channel
+	linker    Linker
+	writer    Writer
+	close     sync.Once
+	interrupt uint32
 }
 
 func (s *Session) CopyFrom(conn net.Conn) {
@@ -76,18 +78,21 @@ func (s *Session) InActive(err error) error {
 	return s.Interrupt()
 }
 func (s *Session) Interrupt() error {
-	atomic.AddUint32(&s.closed, 1)
+	atomic.AddUint32(&s.interrupt, 1)
 	return s.Close()
 }
 func (s *Session) Close() error {
-	if atomic.LoadUint32(&s.closed) == 0 {
-		atomic.AddUint32(&s.closed, 1)
-		data := encode(s.id, msg.WspCmd_INTERRUPT, []byte{})
-		s.channel.Write(data)
-	}
-	s.channel.session.Delete(s.id)
-	if s.writer == nil {
-		return nil
-	}
-	return s.writer.Close()
+	s.close.Do(func() {
+		if atomic.LoadUint32(&s.interrupt) == 0 {
+			atomic.AddUint32(&s.interrupt, 1)
+			data := encode(s.id, msg.WspCmd_INTERRUPT, []byte{})
+			s.channel.Write(data)
+		}
+		s.channel.session.Delete(s.id)
+		if s.writer == nil {
+			return
+		}
+		s.writer.Close()
+	})
+	return nil
 }
