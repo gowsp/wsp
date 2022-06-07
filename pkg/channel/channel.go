@@ -21,6 +21,7 @@ type Channel struct {
 	conn    *websocket.Conn
 	session sync.Map
 	adapter Adapter
+	msgs    chan message
 }
 type Linker interface {
 	InActive(err error)
@@ -30,7 +31,7 @@ type Linker interface {
 
 func New(conn *websocket.Conn, adapter Adapter) *Channel {
 	conn.SetReadLimit(64 * 1024)
-	return &Channel{conn: conn, adapter: adapter}
+	return &Channel{conn: conn, adapter: adapter, msgs: make(chan message, 64)}
 }
 func (c *Channel) NewSession(id string, config *msg.WspConfig, l Linker, w Writer) *Session {
 	return &Session{id: id, config: config, channel: c, linker: l, writer: w, msgs: make(chan *msg.Data, 64)}

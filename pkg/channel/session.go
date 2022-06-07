@@ -98,6 +98,7 @@ func (s *Session) Close() error {
 			s.channel.Write(data)
 		}
 		s.channel.session.Delete(s.id)
+		close(s.msgs)
 		if s.writer == nil {
 			return
 		}
