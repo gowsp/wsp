@@ -24,16 +24,16 @@ func (c *Config) NewEmpty() cmd.CmdConfig {
 }
 func (c *Config) Merge(conf cmd.CmdConfig) {
 	config := conf.(*Config)
-	if c.Host == "" {
+	if config.Host != "" {
 		c.Host = config.Host
 	}
-	if c.Auth == "" {
+	if config.Auth != "" {
 		c.Auth = config.Auth
 	}
-	if c.Path == "" {
+	if config.Path != "" {
 		c.Path = config.Path
 	}
-	if c.Port == 0 {
+	if config.Port != 0 {
 		c.Port = config.Port
 	}
 }

@@ -32,10 +32,10 @@ func (c *Config) NewEmpty() cmd.CmdConfig {
 }
 func (c *Config) Merge(conf cmd.CmdConfig) {
 	config := conf.(*Config)
-	if c.Server == "" {
+	if config.Server != "" {
 		c.Server = config.Server
 	}
-	if c.Auth == "" {
+	if config.Auth != "" {
 		c.Auth = config.Auth
 	}
 	c.Local = append(c.Local, config.Local...)
