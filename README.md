@@ -249,8 +249,8 @@ import "github.com/gowsp/wsp/pkg/server"
 
 config := &server.Config{Auth: "auth"}
 
-server.NewWspsWithHandler(config, http.NewServeMux())
-server.NewWspsWithHandler(config, http.DefaultServeMux)
+server.NewWithHandler(config, http.NewServeMux())
+server.NewWithHandler(config, http.DefaultServeMux)
 ```
 
 与gin集成
@@ -260,7 +260,7 @@ import "github.com/gowsp/wsp/pkg/server"
 
 config := &server.Config{Auth: "auth"}
 r := gin.Default()
-server.NewWspsWithHandler(config, r)
+server.NewWithHandler(config, r)
 ```
 
 ## TODO
