@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
@@ -30,48 +29,29 @@ func (c *conn) AddRemote(id string, conf *msg.WspConfig) error {
 			return fmt.Errorf("unsupported http mode %s", conf.Mode())
 		}
 	}
-	if c.wsps.Exist(channel) {
+	if hub.Exist(channel) {
 		return fmt.Errorf("channel %s already registered", channel)
 	}
-	if err := c.channel.Reply(id, msg.WspCode_SUCCESS, ""); err != nil {
+	if err := c.wan.Reply(id, nil); err != nil {
 		return err
 	}
 	log.Println("register channel", channel)
-	c.wsps.Store(channel, c)
-	c.configs.Store(channel, conf)
+	hub.Store(channel, c)
+	c.listen.Store(channel, conf)
 	return nil
 }
 
-type bridge struct {
-	id     string
-	config *msg.WspConfig
-	local  *channel.Channel
-	output *channel.Channel
-}
-
-func (l *bridge) InActive(err error) {
-	l.local.Reply(l.id, msg.WspCode_FAILED, err.Error())
-}
-
-func (l *bridge) Active(session *channel.Session) error {
-	l.local.Bridge(l.id, l.config, l.output)
-	return l.local.Reply(l.id, msg.WspCode_SUCCESS, "")
-}
-
-func (c *conn) NewRemoteConn(id string, conf *msg.WspConfig) error {
-	key := conf.Channel()
-	if val, ok := c.wsps.LoadRouter(key); ok {
-		log.Printf("start bridge channel %s\n", key)
-		remote := val.(*conn)
-
-		config, ok := remote.configs.Load(key)
-		if !ok {
-			return fmt.Errorf("channel not registered")
-		}
-		w := c.channel.NewWsWriter(id)
-		l := &bridge{id, config.(*msg.WspConfig), c.channel, remote.channel}
-		remote.channel.NewSession(id, conf, l, w).Syn()
-		return nil
+func (c *conn) NewRemoteConn(req *msg.Data, config *msg.WspConfig) error {
+	channel := config.Channel()
+	val, ok := hub.Load(channel)
+	if !ok {
+		return fmt.Errorf("channel %s not registered", channel)
 	}
-	return fmt.Errorf("channel not registered")
+	log.Println(channel, "bridging request received")
+	remote := val.(*conn)
+	if _, ok := remote.listen.Load(channel); !ok {
+		hub.Remove(channel)
+		return fmt.Errorf("channel %s offline", channel)
+	}
+	return c.wan.Bridge(req, config, remote.wan)
 }

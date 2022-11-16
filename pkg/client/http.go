@@ -9,9 +9,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/segmentio/ksuid"
 )
 
 // HTTPProxy implement DynamicProxy
@@ -38,9 +36,9 @@ func (p *HTTPProxy) Listen() {
 	}
 }
 
-func (p *HTTPProxy) ServeConn(conn net.Conn) error {
+func (p *HTTPProxy) ServeConn(local net.Conn) error {
 	buffer := new(bytes.Buffer)
-	reader := bufio.NewReader(io.TeeReader(conn, buffer))
+	reader := bufio.NewReader(io.TeeReader(local, buffer))
 	reqeust, err := http.ReadRequest(reader)
 	if err != nil {
 		return err
@@ -50,33 +48,21 @@ func (p *HTTPProxy) ServeConn(conn net.Conn) error {
 	if strings.LastIndexByte(reqeust.URL.Host, ':') == -1 {
 		addr = addr + ":80"
 	}
-	conf := p.conf.DynamicAddr(addr)
 	log.Println("open http proxy", addr)
-	id := ksuid.New().String()
-	l := &httpProxyLinker{addr: addr, conn: conn, buff: buffer, ssl: ssl}
-	return p.wspc.channel.NewTcpSession(id, conf, l, conn).Syn()
-}
-
-type httpProxyLinker struct {
-	addr string
-	ssl  bool
-	conn net.Conn
-	buff *bytes.Buffer
-}
-
-func (l *httpProxyLinker) InActive(err error) {
-	l.conn.Write([]byte("HTTP/1.1 500\r\n\r\n"))
-	log.Println("close http proxy", l.addr, err.Error())
-}
-func (l *httpProxyLinker) Active(session *channel.Session) error {
-	go func() {
-		if l.ssl {
-			l.conn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
-		} else {
-			session.Write(l.buff.Bytes())
-		}
-		session.CopyFrom(l.conn)
-		log.Println("close http proxy", l.addr)
-	}()
+	config := p.conf.DynamicAddr(addr)
+	remote, err := p.wspc.wan.DialTCP(local, config)
+	if err != nil {
+		local.Write([]byte("HTTP/1.1 500\r\n\r\n"))
+		return err
+	}
+	defer remote.Close()
+	if ssl {
+		local.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	} else {
+		remote.Write(buffer.Bytes())
+	}
+	buffer.Reset()
+	io.Copy(remote, local)
+	log.Println("close http proxy", addr)
 	return nil
 }

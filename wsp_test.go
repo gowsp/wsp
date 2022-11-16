@@ -23,7 +23,7 @@ func TestProxyClient(t *testing.T) {
 	})
 	client.ListenAndServe()
 }
-func TestProxyServer(t *testing.T) {
+func TestTunnel(t *testing.T) {
 	go client.New(&client.Config{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
@@ -75,14 +75,16 @@ func TestTCPOverWs(t *testing.T) {
 	}).ListenAndServe()
 }
 
-func TestTunnel(t *testing.T) {
-	go client.New(&client.Config{
+func TestTunnel1(t *testing.T) {
+	client.New(&client.Config{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
 			"tcp://ssh:pwd@192.168.7.171:22",
 		},
 	}).ListenAndServe()
+}
+func TestTunnel2(t *testing.T) {
 	client.New(&client.Config{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",

@@ -7,9 +7,7 @@ import (
 	"log"
 	"net"
 
-	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/segmentio/ksuid"
 )
 
 var errVersion = fmt.Errorf("unsupported socks version")
@@ -136,28 +134,16 @@ func (p *Socks5Proxy) readIP(conn net.Conn, len byte) (string, error) {
 	}
 	return net.IP(addr).String(), nil
 }
-func (p *Socks5Proxy) replies(addr string, conn net.Conn) {
-	conf := p.conf.DynamicAddr(addr)
-	log.Println("open socks5 proxy", addr)
-	id := ksuid.New().String()
-	l := &socks5Linker{addr: addr, conn: conn}
-	p.wspc.channel.NewTcpSession(id, conf, l, conn).Syn()
-}
-
-type socks5Linker struct {
-	addr string
-	conn net.Conn
-}
-
-func (l *socks5Linker) InActive(err error) {
-	l.conn.Write([]byte{0x05, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	log.Println("close socks5 proxy", l.addr, err.Error())
-}
-func (l *socks5Linker) Active(session *channel.Session) error {
-	l.conn.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	go func() {
-		session.CopyFrom(l.conn)
-		log.Println("close socks5 proxy", l.addr)
-	}()
-	return nil
+func (p *Socks5Proxy) replies(addr string, local net.Conn) {
+	config := p.conf.DynamicAddr(addr)
+	remote, err := p.wspc.wan.DialTCP(local, config)
+	if err != nil {
+		local.Write([]byte{0x05, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+		log.Println("close socks5", addr, err.Error())
+		return
+	}
+	local.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
+	io.Copy(remote, local)
+	remote.Close()
+	log.Println("close socks5", addr, config)
 }

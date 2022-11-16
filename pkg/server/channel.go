@@ -4,22 +4,28 @@ import (
 	"sync"
 )
 
-func (s *Wsps) Exist(channel string) (exist bool) {
-	_, exist = s.channel.Load(channel)
+var hub = &Hub{}
+
+type Hub struct {
+	listen sync.Map
+}
+
+func (s *Hub) Load(channel string) (interface{}, bool) {
+	return s.listen.Load(channel)
+}
+func (s *Hub) Exist(channel string) (exist bool) {
+	_, exist = s.listen.Load(channel)
 	return
 }
-func (s *Wsps) Store(channel string, r interface{}) {
-	s.channel.Store(channel, r)
+func (s *Hub) Store(channel string, r interface{}) {
+	s.listen.Store(channel, r)
 }
-func (s *Wsps) LoadRouter(channel string) (interface{}, bool) {
-	return s.channel.Load(channel)
+func (s *Hub) Remove(channel string) {
+	s.listen.Delete(channel)
 }
-func (s *Wsps) Remove(channel string) {
-	s.channel.Delete(channel)
-}
-func (s *Wsps) Delete(router sync.Map) {
+func (s *Hub) Delete(router sync.Map) {
 	router.Range(func(key, value interface{}) bool {
-		s.channel.Delete(key)
+		s.listen.Delete(key)
 		return true
 	})
 }

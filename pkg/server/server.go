@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 
 	"github.com/gowsp/wsp/pkg/msg"
 	"nhooyr.io/websocket"
@@ -15,7 +14,6 @@ import (
 
 type Wsps struct {
 	config  *Config
-	channel sync.Map
 	handler http.Handler
 }
 
@@ -31,7 +29,7 @@ func NewWithHandler(config *Config, handler http.Handler) http.Handler {
 func (s *Wsps) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 	host, _, _ := net.SplitHostPort(r.Host)
 	channel := "http:domain:" + host
-	if val, ok := s.LoadRouter(channel); ok {
+	if val, ok := hub.Load(channel); ok {
 		val.(*conn).ServeHTTP(channel, rw, r)
 		return
 	}
@@ -46,7 +44,7 @@ func (s *Wsps) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
 		return
 	}
 	channel = "http:path:" + paths[0]
-	if val, ok := s.LoadRouter(channel); ok {
+	if val, ok := hub.Load(channel); ok {
 		val.(*conn).ServeHTTP(channel, rw, r)
 		return
 	}
@@ -75,6 +73,7 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 
 	router := &conn{wsps: s}
 	router.ListenAndServe(ws)
+	hub.Delete(router.listen)
 }
 
 func getRemoteIP(r *http.Request) string {

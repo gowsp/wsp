@@ -6,39 +6,51 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
-	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/stream"
 	"nhooyr.io/websocket"
 )
 
 type Wspc struct {
 	start   sync.Once
 	config  *Config
-	closed  uint32
-	configs sync.Map
-	channel *channel.Channel
+	listen  sync.Map
+	wan     *stream.Wan
+	handler *stream.Handler
 }
 
 func New(config *Config) *Wspc {
-	return &Wspc{config: config}
+	w := &Wspc{config: config}
+	w.handler = stream.NewHandler(w)
+	return w
 }
-
+func (c *Wspc) register() {
+	for _, val := range c.config.Remote {
+		config, err := msg.NewWspConfig(msg.WspType_REMOTE, val)
+		if err != nil {
+			log.Println("forward remote error", err)
+			continue
+		}
+		if _, err := c.wan.DialTCP(nil, config); err != nil {
+			log.Println(err)
+		}
+		c.listen.Store(config.Channel(), config)
+	}
+}
 func (c *Wspc) ListenAndServe() {
-	channel := c.connect()
-	c.channel = channel
-	c.Register()
+	c.wan = c.connect()
+	go c.register()
 	c.start.Do(func() {
 		c.LocalForward()
 		c.DynamicForward()
 	})
-	channel.Serve()
+	c.handler.Serve(c.wan)
 	c.ListenAndServe()
 }
-func (c *Wspc) connect() *channel.Channel {
+func (c *Wspc) connect() *stream.Wan {
 	headers := make(http.Header)
 	headers.Set("Auth", c.config.Auth)
 	headers.Set("Proto", msg.PROTOCOL_VERSION.String())
@@ -53,17 +65,16 @@ func (c *Wspc) connect() *channel.Channel {
 	if resp.StatusCode == 400 || resp.StatusCode == 401 {
 		msg, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		log.Println(string(msg))
-		os.Exit(1)
+		log.Fatalln(string(msg))
 	}
 	log.Println("successfully connected to", server)
-	channel := channel.New(ws, c.NewConn)
-	go channel.HeartBeat(time.Second * 30)
-	return channel
+	wan := stream.NewWan(ws)
+	go wan.HeartBeat(time.Second * 30)
+	return wan
 }
 
 func (c *Wspc) LoadConfig(channel string) (*msg.WspConfig, error) {
-	if val, ok := c.configs.Load(channel); ok {
+	if val, ok := c.listen.Load(channel); ok {
 		return val.(*msg.WspConfig), nil
 	}
 	return nil, fmt.Errorf(channel + " not found")

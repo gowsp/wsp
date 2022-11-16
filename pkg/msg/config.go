@@ -28,6 +28,9 @@ type WspConfig struct {
 func (c *WspConfig) ToReqeust() *WspRequest {
 	return &WspRequest{Type: c.wspType, Data: c.url.String()}
 }
+func (c *WspConfig) IsRemoteType() bool {
+	return c.wspType == WspType_REMOTE
+}
 func (c *WspConfig) IsHTTP() bool {
 	switch c.url.Scheme {
 	case "http", "https":
@@ -60,7 +63,9 @@ func (c *WspConfig) Network() string {
 		return network
 	}
 }
-
+func (c *WspConfig) String() string {
+	return c.url.String()
+}
 func (c *WspConfig) Address() string {
 	return c.url.Host
 }

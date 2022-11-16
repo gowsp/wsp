@@ -2,64 +2,22 @@ package client
 
 import (
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"time"
 
-	"github.com/gowsp/wsp/pkg/channel"
 	"github.com/gowsp/wsp/pkg/msg"
-	"github.com/segmentio/ksuid"
 )
 
-type remoteRegister struct {
-	c      *Wspc
-	config *msg.WspConfig
-}
-
-func (l *remoteRegister) InActive(err error) {
-	log.Println("error:", err.Error())
-}
-func (l *remoteRegister) Active(session *channel.Session) error {
-	log.Println("listen remote on channel", l.config.Channel())
-	l.c.configs.Store(l.config.Channel(), l.config)
-	return nil
-}
-
-func (c *Wspc) Register() {
-	for _, val := range c.config.Remote {
-		conf, err := msg.NewWspConfig(msg.WspType_REMOTE, val)
-		if err != nil {
-			log.Println("forward remote error", err)
-			continue
-		}
-		id := ksuid.New().String()
-		c.channel.NewSession(id, conf, &remoteRegister{c, conf}, nil).Syn()
-	}
-}
-
-type remoteLinker struct {
-	conn    net.Conn
-	channel string
-}
-
-func (l *remoteLinker) InActive(err error) {
-	log.Println("open remote", l.channel, err.Error())
-}
-func (l *remoteLinker) Active(session *channel.Session) error {
-	go func() {
-		session.CopyFrom(l.conn)
-		log.Printf("close %s connection\n", l.channel)
-	}()
-	return nil
-}
-
-func (c *Wspc) NewConn(id string, req *msg.WspRequest) error {
+func (c *Wspc) NewConn(data *msg.Data, req *msg.WspRequest) error {
 	remote, err := req.ToConfig()
 	if err != nil {
 		return err
 	}
 	channel := remote.Channel()
-	log.Printf("received %s connection\n", channel)
+	log.Println("received conn", channel)
+	defer log.Println("close conn", channel)
 	conf, err := c.LoadConfig(channel)
 	if err != nil {
 		return err
@@ -76,6 +34,12 @@ func (c *Wspc) NewConn(id string, req *msg.WspRequest) error {
 	if err != nil {
 		return err
 	}
-	l := &remoteLinker{conn: conn, channel: channel}
-	return c.channel.NewTcpSession(id, remote, l, conn).Ack()
+	local, err := c.wan.Accept(data.ID(), conn, conf)
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	io.Copy(local, conn)
+	local.Close()
+	return nil
 }
