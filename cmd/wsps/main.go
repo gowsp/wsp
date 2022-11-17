@@ -11,20 +11,17 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gowsp/wsp/internal/cmd"
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/server"
 )
 
-var date string
-var version string
-
 func main() {
-	config := &server.Config{}
-	err := cmd.ParseConfig(config, cmd.NewVersion(date, version))
+	config, err := parseConfig()
 	if err != nil {
-		log.Println(err)
+		logger.Error("start wsps error: %s", err)
 		return
 	}
+	config.Log.Init()
 	wsps := server.New(config)
 	addr := fmt.Sprintf(":%d", config.Port)
 	srv := &http.Server{Handler: wsps, Addr: addr}
@@ -42,7 +39,7 @@ func main() {
 	defer cancel()
 
 	if err := srv.Shutdown(ctx); err != nil {
-		log.Fatal("wsps forced to shutdown:", err)
+		logger.Fatalln("wsps forced to shutdown: %s", err)
 	}
-	log.Println("wsps exiting")
+	logger.Info("wsps exiting")
 }

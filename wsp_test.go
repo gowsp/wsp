@@ -18,7 +18,7 @@ func TestServer(t *testing.T) {
 	http.ListenAndServe(":8080", wsps)
 }
 func TestProxyClient(t *testing.T) {
-	client := client.New(&client.WspcConfig{
+	client := client.New(client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Dynamic: []string{
@@ -29,14 +29,14 @@ func TestProxyClient(t *testing.T) {
 	client.ListenAndServe()
 }
 func TestTunnel(t *testing.T) {
-	go client.New(&client.WspcConfig{
+	go client.New(client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
 			"tunnel://dynamic:vpn@",
 		},
 	}).ListenAndServe()
-	client.New(&client.WspcConfig{
+	client.New(client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Dynamic: []string{
@@ -56,7 +56,7 @@ func TestReverseProxy(t *testing.T) {
 	go web.ListenAndServe()
 	// http://127.0.0.1:8010/api/users
 	// http://127.0.0.1:8010/api/groups
-	client := client.New(&client.WspcConfig{
+	client := client.New(client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
@@ -71,7 +71,7 @@ func TestReverseProxy(t *testing.T) {
 	client.ListenAndServe()
 }
 func TestTCPOverWs(t *testing.T) {
-	client.New(&client.WspcConfig{
+	client.New(client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
@@ -81,7 +81,7 @@ func TestTCPOverWs(t *testing.T) {
 }
 
 func TestTunnel1(t *testing.T) {
-	client.New(&client.WspcConfig{
+	client.New(client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
@@ -90,7 +90,7 @@ func TestTunnel1(t *testing.T) {
 	}).ListenAndServe()
 }
 func TestTunnel2(t *testing.T) {
-	client.New(&client.WspcConfig{
+	client.New(client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Local: []string{

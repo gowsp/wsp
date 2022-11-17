@@ -1,15 +1,23 @@
 {
-    "auth": "auth",
-    "server": "ws://mywsps.com:8010/proxy",
-    "dynamic": [
-        "socks5://:1080"
-    ],
-    "remote": [
-        "tcp://ssh:passwod@192.168.1.100:22",
-        "http://127.0.0.1:8080?mode=path&value=api",
-        "http://127.0.0.1:8080?mode=domain&value=custom.com"
-    ],
-    "local": [
-        "tcp://ssh:passwod@127.0.0.1:2200"
+    "log": {
+        "level": "info",
+        "output": "/var/log/wspc.json"
+    },
+    "client": [
+        {
+            "auth": "auth",
+            "server": "ws://mywsps.com:8010/proxy",
+            "dynamic": [
+                "socks5://:1080"
+            ],
+            "remote": [
+                "tcp://ssh:passwod@192.168.1.100:22",
+                "http://127.0.0.1:8080?mode=path&value=api",
+                "http://127.0.0.1:8080?mode=domain&value=custom.com"
+            ],
+            "local": [
+                "tcp://ssh:passwod@127.0.0.1:2200"
+            ]
+        }
     ]
 }

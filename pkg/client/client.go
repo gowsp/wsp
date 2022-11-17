@@ -16,13 +16,13 @@ import (
 
 type Wspc struct {
 	start   sync.Once
-	config  *WspcConfig
+	config  WspcConfig
 	listen  sync.Map
 	wan     *stream.Wan
 	handler *stream.Handler
 }
 
-func New(config *WspcConfig) *Wspc {
+func New(config WspcConfig) *Wspc {
 	w := &Wspc{config: config}
 	w.handler = stream.NewHandler(w)
 	return w

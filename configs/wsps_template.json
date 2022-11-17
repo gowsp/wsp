@@ -1,4 +1,8 @@
 {
+    "log": {
+        "level": "info",
+        "output": "/var/log/wsps.json"
+    },
     "host": "mywsps.com",
     "auth": "auth",
     "path": "/proxy",

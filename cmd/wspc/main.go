@@ -2,28 +2,25 @@ package main
 
 import (
 	"context"
-	"log"
 	"os"
 	"os/signal"
 
-	"github.com/gowsp/wsp/internal/cmd"
 	"github.com/gowsp/wsp/pkg/client"
+	"github.com/gowsp/wsp/pkg/logger"
 )
 
-var date string
-var version string
-
 func main() {
-	config := &client.WspcConfig{}
-	err := cmd.ParseConfig(config, cmd.NewVersion(date, version))
+	config, err := parseConfig()
 	if err != nil {
-		log.Println(err)
+		logger.Error("start wspc error: %s", err)
 		return
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	client := client.New(config)
-	go client.ListenAndServe()
+	config.Log.Init()
+	for _, wspc := range config.Client {
+		go client.New(wspc).ListenAndServe()
+	}
 	<-ctx.Done()
-	log.Println("wspc closed")
+	logger.Info("wspc closed")
 }
