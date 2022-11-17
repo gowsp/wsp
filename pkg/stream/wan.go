@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/segmentio/ksuid"
 	"google.golang.org/protobuf/proto"
@@ -88,11 +89,9 @@ func (w *Wan) Reply(id string, message error) (err error) {
 	} else {
 		res = msg.WspResponse{Code: msg.WspCode_FAILED, Data: message.Error()}
 	}
+	logger.Debug("send connect response %s, error: %s", id, err)
 	response, _ := proto.Marshal(&res)
-	data, err := encode(id, msg.WspCmd_RESPOND, response)
-	if err != nil {
-		return err
-	}
+	data, _ := encode(id, msg.WspCmd_RESPOND, response)
 	return w.write(data, time.Minute)
 }
 func (w *Wan) Bridge(req *msg.Data, config *msg.WspConfig, rwan *Wan) error {

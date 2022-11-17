@@ -3,10 +3,10 @@ package client
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
@@ -16,8 +16,7 @@ func (c *Wspc) NewConn(data *msg.Data, req *msg.WspRequest) error {
 		return err
 	}
 	channel := remote.Channel()
-	log.Println("received conn", channel)
-	defer log.Println("close conn", channel)
+	logger.Info("received channel %s conn", channel)
 	conf, err := c.LoadConfig(channel)
 	if err != nil {
 		return err
@@ -36,10 +35,10 @@ func (c *Wspc) NewConn(data *msg.Data, req *msg.WspRequest) error {
 	}
 	local, err := c.wan.Accept(data.ID(), conn, conf)
 	if err != nil {
-		conn.Close()
 		return err
 	}
 	io.Copy(local, conn)
 	local.Close()
+	logger.Info("close channel %s conn %s", channel, conn.RemoteAddr())
 	return nil
 }

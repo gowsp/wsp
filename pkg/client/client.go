@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/gowsp/wsp/pkg/stream"
 	"nhooyr.io/websocket"
@@ -16,13 +16,13 @@ import (
 
 type Wspc struct {
 	start   sync.Once
-	config  *Config
+	config  *WspcConfig
 	listen  sync.Map
 	wan     *stream.Wan
 	handler *stream.Handler
 }
 
-func New(config *Config) *Wspc {
+func New(config *WspcConfig) *Wspc {
 	w := &Wspc{config: config}
 	w.handler = stream.NewHandler(w)
 	return w
@@ -31,11 +31,11 @@ func (c *Wspc) register() {
 	for _, val := range c.config.Remote {
 		config, err := msg.NewWspConfig(msg.WspType_REMOTE, val)
 		if err != nil {
-			log.Println("forward remote error", err)
+			logger.Error("remote config %s error: %s", val, err)
 			continue
 		}
 		if _, err := c.wan.DialTCP(nil, config); err != nil {
-			log.Println(err)
+			logger.Error("register %s error: %s", val, err)
 		}
 		c.listen.Store(config.Channel(), config)
 	}
@@ -59,15 +59,15 @@ func (c *Wspc) connect() *stream.Wan {
 		server, &websocket.DialOptions{HTTPHeader: headers})
 	if err != nil {
 		time.Sleep(3 * time.Second)
-		log.Println("reconnect", server, "...")
+		logger.Info("reconnect %s ...", server)
 		return c.connect()
 	}
 	if resp.StatusCode == 400 || resp.StatusCode == 401 {
 		msg, _ := io.ReadAll(resp.Body)
 		resp.Body.Close()
-		log.Fatalln(string(msg))
+		logger.Fatalln("error connect %s %s", server, string(msg))
 	}
-	log.Println("successfully connected to", server)
+	logger.Info("successfully connected to %s", server)
 	wan := stream.NewWan(ws)
 	go wan.HeartBeat(time.Second * 30)
 	return wan

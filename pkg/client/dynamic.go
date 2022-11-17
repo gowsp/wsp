@@ -1,9 +1,9 @@
 package client
 
 import (
-	"log"
 	"net"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
@@ -19,7 +19,7 @@ func (c *Wspc) DynamicForward() {
 	for _, val := range c.config.Dynamic {
 		conf, err := msg.NewWspConfig(msg.WspType_DYNAMIC, val)
 		if err != nil {
-			log.Println("forward dynamic error,", err)
+			logger.Error("dynamic config error: %s", err)
 			continue
 		}
 		c.ListenDynamic(conf)
@@ -34,7 +34,7 @@ func (c *Wspc) ListenDynamic(conf *msg.WspConfig) {
 	case "socks5":
 		proxy = &Socks5Proxy{conf: conf, wspc: c}
 	default:
-		log.Println("Not supported", conf.Scheme())
+		logger.Info("dynamic not supported %s", conf.Scheme())
 		return
 	}
 	go proxy.Listen()

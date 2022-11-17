@@ -3,12 +3,12 @@ package server
 import (
 	"context"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"strings"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"nhooyr.io/websocket"
 )
@@ -29,7 +29,7 @@ func (r *conn) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *ht
 	}
 	ws, err := websocket.Accept(w, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
-		log.Printf("websocket accept %v", err)
+		logger.Error("websocket accept %v", err)
 		return
 	}
 	local := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
@@ -55,7 +55,7 @@ func (r *conn) NewHTTPProxy(conf *msg.WspConfig) *httputil.ReverseProxy {
 	if ok {
 		return c.(*httputil.ReverseProxy)
 	}
-	log.Println("start http proxy", channel)
+	logger.Info("start http proxy %s", channel)
 	u := conf.ReverseURL()
 	p := httputil.NewSingleHostReverseProxy(u)
 	prefix := "http:path:"

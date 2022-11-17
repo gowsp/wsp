@@ -2,8 +2,8 @@ package server
 
 import (
 	"fmt"
-	"log"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
@@ -35,7 +35,7 @@ func (c *conn) AddRemote(id string, conf *msg.WspConfig) error {
 	if err := c.wan.Reply(id, nil); err != nil {
 		return err
 	}
-	log.Println("register channel", channel)
+	logger.Info("register channel %s", channel)
 	hub.Store(channel, c)
 	c.listen.Store(channel, conf)
 	return nil
@@ -47,7 +47,7 @@ func (c *conn) NewRemoteConn(req *msg.Data, config *msg.WspConfig) error {
 	if !ok {
 		return fmt.Errorf("channel %s not registered", channel)
 	}
-	log.Println(channel, "bridging request received")
+	logger.Info("bridging request %s received", channel)
 	remote := val.(*conn)
 	if _, ok := remote.listen.Load(channel); !ok {
 		hub.Remove(channel)

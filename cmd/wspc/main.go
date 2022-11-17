@@ -14,7 +14,7 @@ var date string
 var version string
 
 func main() {
-	config := &client.Config{}
+	config := &client.WspcConfig{}
 	err := cmd.ParseConfig(config, cmd.NewVersion(date, version))
 	if err != nil {
 		log.Println(err)

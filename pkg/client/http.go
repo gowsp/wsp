@@ -4,11 +4,11 @@ import (
 	"bufio"
 	"bytes"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"strings"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
@@ -20,16 +20,16 @@ type HTTPProxy struct {
 
 func (p *HTTPProxy) Listen() {
 	address := p.conf.Address()
-	log.Println("listen http proxy", address)
+	logger.Info("listen http proxy %s", address)
 	l, err := net.Listen(p.conf.Network(), address)
 	if err != nil {
-		log.Println(err)
+		logger.Error("listen http proxy error: %s", err)
 		return
 	}
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			log.Println(err)
+			logger.Error("http proxy accept %s", err)
 			continue
 		}
 		go p.ServeConn(conn)
@@ -48,10 +48,11 @@ func (p *HTTPProxy) ServeConn(local net.Conn) error {
 	if strings.LastIndexByte(reqeust.URL.Host, ':') == -1 {
 		addr = addr + ":80"
 	}
-	log.Println("open http proxy", addr)
+	logger.Info("open http proxy %s", addr)
 	config := p.conf.DynamicAddr(addr)
 	remote, err := p.wspc.wan.DialTCP(local, config)
 	if err != nil {
+		logger.Error("open http proxy %s error:", addr, err)
 		local.Write([]byte("HTTP/1.1 500\r\n\r\n"))
 		return err
 	}
@@ -63,6 +64,6 @@ func (p *HTTPProxy) ServeConn(local net.Conn) error {
 	}
 	buffer.Reset()
 	io.Copy(remote, local)
-	log.Println("close http proxy", addr)
+	logger.Info("close http proxy %s", addr)
 	return nil
 }

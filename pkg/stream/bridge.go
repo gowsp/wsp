@@ -3,12 +3,12 @@ package stream
 import (
 	"errors"
 	"io"
-	"log"
 	"net"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
@@ -64,7 +64,7 @@ func (c *bridge) run() {
 			_, err := c.Write(*msg.Raw)
 			atomic.AddUint64(&c.num, uint64(len(msg.Payload())))
 			if err != nil {
-				log.Println("brideg error")
+				logger.Error("brideg error %s", err)
 				c.Close()
 			}
 		}
@@ -88,7 +88,7 @@ func (c *bridge) Interrupt() error {
 		if val, ok := c.output.connect.LoadAndDelete(c.id); ok {
 			close(val.(*bridge).msgs)
 		}
-		log.Println("close bridge", c.config.Channel())
+		logger.Info("close bridge %s", c.config.Channel())
 		data, _ := encode(c.id, msg.WspCmd_INTERRUPT, []byte{})
 		c.Write(data)
 	})
@@ -96,7 +96,7 @@ func (c *bridge) Interrupt() error {
 }
 func (c *bridge) Close() error {
 	c.close.Do(func() {
-		log.Println("close bridge", c.config.Channel())
+		logger.Info("close bridge %s", c.config.Channel())
 		data, _ := encode(c.id, msg.WspCmd_INTERRUPT, []byte{})
 		if val, ok := c.input.connect.LoadAndDelete(c.id); ok {
 			close(val.(*bridge).msgs)

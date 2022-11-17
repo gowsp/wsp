@@ -3,9 +3,9 @@ package stream
 import (
 	"errors"
 	"io"
-	"log"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"google.golang.org/protobuf/proto"
 	"nhooyr.io/websocket"
@@ -45,7 +45,7 @@ func (w *Handler) Serve(wan *Wan) {
 			break
 		}
 		if err != io.EOF {
-			log.Println("error reading webSocket message:", err)
+			logger.Error("error reading webSocket message: %s", err)
 		}
 		break
 	}
@@ -64,15 +64,16 @@ func (w *Handler) process(wan *Wan) {
 			data := message.data
 			m := new(msg.WspMessage)
 			if err := proto.Unmarshal(data, m); err != nil {
-				log.Println("error unmarshal message:", err)
+				logger.Error("error unmarshal message: %s", err)
 			}
 			err := w.serve(&msg.Data{Msg: m, Raw: &data}, wan)
 			if errors.Is(err, ErrConnNotExist) {
+				logger.Error("connect %s not exists", m.Id)
 				data, _ := encode(m.Id, msg.WspCmd_INTERRUPT, []byte(err.Error()))
 				wan.write(data, time.Minute)
 			}
 		default:
-			log.Println("unsupported message type", message.mt)
+			logger.Error("unsupported message type %v", message.mt)
 		}
 	}
 }
@@ -82,31 +83,37 @@ func (w *Handler) serve(data *msg.Data, wan *Wan) error {
 	case msg.WspCmd_CONNECT:
 		req := new(msg.WspRequest)
 		if err := proto.Unmarshal(data.Payload(), req); err != nil {
+			logger.Error("invalid request data %s", err)
 			wan.Reply(id, err)
 			return err
 		}
 		go func() {
+			logger.Debug("receive %s connect reqeust: %s", id, req)
 			if err := w.dialer.NewConn(data, req); err != nil {
+				logger.Error("error to open connect %s", req)
 				wan.Reply(id, err)
 			}
 		}()
 	case msg.WspCmd_RESPOND:
+		logger.Debug("receive %s connect response", id)
 		if val, ok := wan.waiting.Load(id); ok {
 			return val.(ready).ready(data)
 		}
 		return ErrConnNotExist
 	case msg.WspCmd_TRANSFER:
+		logger.Trace("receive %s transfer data", id)
 		if val, ok := wan.connect.Load(id); ok {
 			val.(Lan).Rewrite(data)
 			return nil
 		}
 		return ErrConnNotExist
 	case msg.WspCmd_INTERRUPT:
+		logger.Debug("receive %s disconnect request", id)
 		if val, ok := wan.connect.LoadAndDelete(id); ok {
 			return val.(Lan).Interrupt()
 		}
 	default:
-		log.Println("unknown command")
+		logger.Error("unknown command %s", data.Msg.Cmd)
 	}
 	return nil
 }

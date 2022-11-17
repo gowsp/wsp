@@ -2,9 +2,9 @@ package client
 
 import (
 	"io"
-	"log"
 	"net"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
@@ -12,23 +12,24 @@ func (c *Wspc) LocalForward() {
 	for _, val := range c.config.Local {
 		conf, err := msg.NewWspConfig(msg.WspType_LOCAL, val)
 		if err != nil {
-			log.Println("forward local error,", err)
+			logger.Error("local config %s error: %s", val, err)
 			continue
 		}
 		go c.ListenLocal(conf)
 	}
 }
 func (c *Wspc) ListenLocal(conf *msg.WspConfig) {
-	log.Println("listen local on channel", conf.Channel())
+	channel := conf.Channel()
+	logger.Info("listen local on channel %s", channel)
 	local, err := net.Listen(conf.Network(), conf.Address())
 	if err != nil {
-		log.Println(err)
+		logger.Error("listen local channel %s, error: %s", channel, err)
 		return
 	}
 	for {
 		conn, err := local.Accept()
 		if err != nil {
-			log.Println(err)
+			logger.Error("accept local channel %s, error: %s", channel, err)
 			continue
 		}
 		c.NewLocalConn(conn, conf)
@@ -37,14 +38,14 @@ func (c *Wspc) ListenLocal(conf *msg.WspConfig) {
 
 func (c *Wspc) NewLocalConn(local net.Conn, config *msg.WspConfig) {
 	channel := config.Channel()
-	log.Println("open remote channel", channel)
+	logger.Info("open remote channel %s", channel)
 	remote, err := c.wan.DialTCP(local, config)
 	if err != nil {
 		local.Close()
-		log.Println("close local", local.LocalAddr(), err.Error())
+		logger.Error("close local channel %s, addr %s, error: %s", channel, local.LocalAddr(), err)
 		return
 	}
 	io.Copy(remote, local)
 	remote.Close()
-	log.Println("close local", local.LocalAddr())
+	logger.Info("close local channel %s, addr %s", channel, local.LocalAddr())
 }

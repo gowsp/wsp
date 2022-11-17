@@ -2,9 +2,9 @@ package stream
 
 import (
 	"errors"
-	"log"
 	"time"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"google.golang.org/protobuf/proto"
 )
@@ -17,7 +17,6 @@ func encode(id string, cmd msg.WspCmd, data []byte) ([]byte, error) {
 	msg := &msg.WspMessage{Id: id, Cmd: cmd, Data: data}
 	res, err := proto.Marshal(msg)
 	if err != nil {
-		log.Println("error wrap message")
 		return nil, err
 	}
 	return res, nil
@@ -52,7 +51,7 @@ func (w *link) open() error {
 	}
 	w.wan.waiting.Store(w.id, w)
 	defer w.wan.waiting.Delete(w.id)
-	log.Println("start connect", w.config)
+	logger.Debug("send connect request %s", w.config)
 	if err = w.wan.write(data, time.Second*5); err != nil {
 		return err
 	}
@@ -68,6 +67,7 @@ func (w *link) ready(resp *msg.Data) error {
 	return nil
 }
 func (w *link) active() error {
+	logger.Debug("send connect response %s", w.config)
 	res := msg.WspResponse{Code: msg.WspCode_SUCCESS, Data: ""}
 	response, _ := proto.Marshal(&res)
 	data, err := encode(w.id, msg.WspCmd_RESPOND, response)
@@ -77,6 +77,7 @@ func (w *link) active() error {
 	return w.wan.write(data, time.Second*5)
 }
 func (w *link) Write(p []byte) (n int, err error) {
+	logger.Trace("send data %s", w.config)
 	data, err := encode(w.id, msg.WspCmd_TRANSFER, p)
 	if err != nil {
 		return 0, err
@@ -86,6 +87,7 @@ func (w *link) Write(p []byte) (n int, err error) {
 	return
 }
 func (w *link) Close() error {
+	logger.Debug("send interrupt request %s", w.config)
 	w.wan.connect.Delete(w.id)
 	data, err := encode(w.id, msg.WspCmd_INTERRUPT, []byte{})
 	if err != nil {

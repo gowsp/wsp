@@ -3,11 +3,11 @@ package server
 
 import (
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"strings"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"nhooyr.io/websocket"
 )
@@ -55,10 +55,11 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Auth") != s.config.Auth {
 		w.WriteHeader(401)
 		w.Write([]byte("token error, access denied!\n"))
+		logger.Error("illegal request %s", getRemoteIP(r))
 		return
 	}
 	proto := r.Header.Get("Proto")
-	log.Printf("accept %s, proto: %s", getRemoteIP(r), proto)
+	logger.Info("accept %s, proto: %s", getRemoteIP(r), proto)
 	if proto, err := msg.ParseVersion(proto); err != nil || proto.Major() != msg.PROTOCOL_VERSION.Major() {
 		w.WriteHeader(400)
 		fmt.Fprintf(w, "client proto version %s not support, server proto is %s\n", proto, msg.PROTOCOL_VERSION)
@@ -66,7 +67,7 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	}
 	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
 	if err != nil {
-		log.Printf("websocket accept %v", err)
+		logger.Error("websocket accept %v", err)
 		return
 	}
 	defer ws.Close(websocket.StatusNormalClosure, "close connect")
@@ -74,6 +75,7 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 	router := &conn{wsps: s}
 	router.ListenAndServe(ws)
 	hub.Delete(router.listen)
+	logger.Info("close websocket connect")
 }
 
 func getRemoteIP(r *http.Request) string {

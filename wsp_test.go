@@ -5,15 +5,20 @@ import (
 	"testing"
 
 	"github.com/gowsp/wsp/pkg/client"
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/server"
 )
 
+func init() {
+	c := logger.Config{Level: "debug", Output: "d:/tmp/out.txt"}
+	c.Init()
+}
 func TestServer(t *testing.T) {
 	wsps := server.New(&server.Config{Auth: "auth", Path: "/proxy"})
 	http.ListenAndServe(":8080", wsps)
 }
 func TestProxyClient(t *testing.T) {
-	client := client.New(&client.Config{
+	client := client.New(&client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Dynamic: []string{
@@ -24,14 +29,14 @@ func TestProxyClient(t *testing.T) {
 	client.ListenAndServe()
 }
 func TestTunnel(t *testing.T) {
-	go client.New(&client.Config{
+	go client.New(&client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
 			"tunnel://dynamic:vpn@",
 		},
 	}).ListenAndServe()
-	client.New(&client.Config{
+	client.New(&client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Dynamic: []string{
@@ -51,7 +56,7 @@ func TestReverseProxy(t *testing.T) {
 	go web.ListenAndServe()
 	// http://127.0.0.1:8010/api/users
 	// http://127.0.0.1:8010/api/groups
-	client := client.New(&client.Config{
+	client := client.New(&client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
@@ -66,7 +71,7 @@ func TestReverseProxy(t *testing.T) {
 	client.ListenAndServe()
 }
 func TestTCPOverWs(t *testing.T) {
-	client.New(&client.Config{
+	client.New(&client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
@@ -76,7 +81,7 @@ func TestTCPOverWs(t *testing.T) {
 }
 
 func TestTunnel1(t *testing.T) {
-	client.New(&client.Config{
+	client.New(&client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Remote: []string{
@@ -85,7 +90,7 @@ func TestTunnel1(t *testing.T) {
 	}).ListenAndServe()
 }
 func TestTunnel2(t *testing.T) {
-	client.New(&client.Config{
+	client.New(&client.WspcConfig{
 		Auth:   "auth",
 		Server: "ws://127.0.0.1:8080/proxy",
 		Local: []string{

@@ -4,9 +4,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"log"
 	"net"
 
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
@@ -20,26 +20,25 @@ type Socks5Proxy struct {
 
 func (p *Socks5Proxy) Listen() {
 	address := p.conf.Address()
-	log.Println("listen socks5 proxy", address)
+	logger.Info("listen socks5 on %s", address)
 	l, err := net.Listen(p.conf.Network(), address)
 	if err != nil {
-		log.Println(err)
+		logger.Error("listen socks5 error %s", err)
 		return
 	}
 	for {
 		conn, err := l.Accept()
 		if err != nil {
-			log.Println(err)
+			logger.Error("accept socks5 error %s", err)
 			continue
 		}
 		go func() {
 			err := p.ServeConn(conn)
-			if err == nil {
+			if err == nil || err == io.EOF {
 				return
 			}
-			conn.Close()
-			if io.EOF != err && err != errVersion {
-				log.Println(err)
+			if err != errVersion {
+				logger.Error("serve socks5 error", err)
 			}
 		}()
 	}
@@ -47,10 +46,12 @@ func (p *Socks5Proxy) Listen() {
 
 func (p *Socks5Proxy) ServeConn(conn net.Conn) error {
 	if err := p.auth(conn); err != nil {
+		conn.Close()
 		return err
 	}
 	addr, err := p.readRequest(conn)
 	if err != nil {
+		conn.Close()
 		return err
 	}
 	p.replies(addr, conn)
@@ -139,11 +140,11 @@ func (p *Socks5Proxy) replies(addr string, local net.Conn) {
 	remote, err := p.wspc.wan.DialTCP(local, config)
 	if err != nil {
 		local.Write([]byte{0x05, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-		log.Println("close socks5", addr, err.Error())
+		logger.Error("close socks5 %s %s", addr, err.Error())
 		return
 	}
 	local.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	io.Copy(remote, local)
 	remote.Close()
-	log.Println("close socks5", addr, config)
+	logger.Info("close socks5 %s, addr %s", addr, local.LocalAddr())
 }

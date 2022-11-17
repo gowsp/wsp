@@ -37,10 +37,3 @@ func (c *Config) Merge(conf cmd.CmdConfig) {
 		c.Port = config.Port
 	}
 }
-
-func (config *Config) BindFlag() {
-	flag.StringVar(&config.Host, "h", "", "wsps domain name")
-	flag.StringVar(&config.Auth, "t", "", "wsps auth token")
-	flag.StringVar(&config.Path, "path", "/", "wsps websocket path")
-	flag.Uint64Var(&config.Port, "p", 8080, `Specifies the port on which the websocket server listens for connections`)
-}
