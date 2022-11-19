@@ -1,7 +1,7 @@
 {
     "log": {
         "level": "info",
-        "output": "/var/log/wspc.json"
+        "output": "/var/log/wspc.log"
     },
     "client": [
         {

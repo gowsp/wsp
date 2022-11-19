@@ -1,7 +1,7 @@
 {
     "log": {
         "level": "info",
-        "output": "/var/log/wsps.json"
+        "output": "/var/log/wsps.log"
     },
     "host": "mywsps.com",
     "auth": "auth",
