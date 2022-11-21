@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -26,9 +25,15 @@ func main() {
 	addr := fmt.Sprintf(":%d", config.Port)
 	srv := &http.Server{Handler: wsps, Addr: addr}
 	go func() {
-		log.Printf("wsps will start at %s, path %s ", addr, config.Path)
-		if err := srv.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
-			log.Println(err)
+		logger.Info("wsps will start at %s, path %s ", addr, config.Path)
+		if config.EnbleSSL() {
+			if err := srv.ListenAndServeTLS(config.SSL.Cert, config.SSL.Key); err != nil && errors.Is(err, http.ErrServerClosed) {
+				logger.Error("%s", err)
+			}
+		} else {
+			if err := srv.ListenAndServe(); err != nil && errors.Is(err, http.ErrServerClosed) {
+				logger.Error("%s", err)
+			}
 		}
 	}()
 

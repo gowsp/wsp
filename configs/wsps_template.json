@@ -3,6 +3,11 @@
         "level": "info",
         "output": "/var/log/wsps.log"
     },
+    "ssl": {
+        "enable": false,
+        "key": "/var/cert/key.file",
+        "cert": "/var/cert/cert.file"
+    },
     "host": "mywsps.com",
     "auth": "auth",
     "path": "/proxy",
