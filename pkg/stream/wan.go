@@ -65,7 +65,7 @@ func (w *Wan) DialTCP(local net.Conn, remote *msg.WspConfig) (io.WriteCloser, er
 func (w *Wan) DialHTTP(remote *msg.WspConfig) (net.Conn, error) {
 	id := ksuid.New().String()
 	link := w.newLink(id, remote)
-	if err := link.open(); err != nil || remote.IsRemoteType() {
+	if err := link.open(); err != nil {
 		return nil, err
 	}
 	conn := newLan(&net.TCPAddr{}, link)
