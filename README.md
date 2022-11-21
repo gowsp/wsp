@@ -32,7 +32,7 @@ flowchart TD
 }
 ```
 
-启动服务端， `./wsps -c wsps.json`
+启动服务端， `./wsps -c wsps.json`，其他配置可参考 `configs/wsps_template.json`
 
 ### Wspc
 
@@ -58,6 +58,8 @@ wspc功能设计参考了ssh，配置项存在三种转发模式：
   ]
 }
 ```
+
+`wspc`的其他配置可参考 `configs/wspc_template.json`
 
 ## 正向代理
 
