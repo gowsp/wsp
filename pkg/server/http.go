@@ -8,9 +8,9 @@ import (
 	"net/http/httputil"
 	"strings"
 
+	"github.com/gobwas/ws"
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
-	"nhooyr.io/websocket"
 )
 
 func (r *conn) ServeHTTP(channel string, rw http.ResponseWriter, req *http.Request) {
@@ -27,12 +27,11 @@ func (r *conn) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *ht
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	ws, err := websocket.Accept(w, req, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
+	local, _, _, err := ws.UpgradeHTTP(req, w)
 	if err != nil {
 		logger.Error("websocket accept %v", err)
 		return
 	}
-	local := websocket.NetConn(context.Background(), ws, websocket.MessageBinary)
 	go func() {
 		io.Copy(local, remote)
 		local.Close()

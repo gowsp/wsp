@@ -146,5 +146,5 @@ func (p *Socks5Proxy) replies(addr string, local net.Conn) {
 	local.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 	io.Copy(remote, local)
 	remote.Close()
-	logger.Info("close socks5 %s, addr %s", addr, local.LocalAddr())
+	logger.Info("close socks5 %s, addr %s", addr, local.RemoteAddr())
 }

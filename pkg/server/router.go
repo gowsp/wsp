@@ -2,11 +2,13 @@ package server
 
 import (
 	"fmt"
+	"net"
 	"sync"
 
+	"github.com/gobwas/ws"
+	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/gowsp/wsp/pkg/stream"
-	"nhooyr.io/websocket"
 )
 
 type conn struct {
@@ -20,8 +22,15 @@ func (c *conn) config() *Config {
 	return c.wsps.config
 }
 
-func (c *conn) ListenAndServe(ws *websocket.Conn) {
-	c.wan = stream.NewWan(ws)
+func (c *conn) close() {
+	logger.Info("close websocket connect")
+	c.listen.Range(func(key, value any) bool {
+		hub.Remove(key.(string))
+		return true
+	})
+}
+func (c *conn) ListenAndServe(w net.Conn) {
+	c.wan = stream.NewWan(w, ws.StateServerSide)
 	stream.NewHandler(c).Serve(c.wan)
 }
 

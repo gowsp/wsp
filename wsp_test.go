@@ -10,7 +10,8 @@ import (
 )
 
 func init() {
-	c := logger.Config{Level: "debug", Output: "d:/tmp/out.txt"}
+	// c := logger.Config{Level: "debug", Output: "d:/tmp/out.txt"}
+	c := logger.Config{Level: "debug",}
 	c.Init()
 }
 func TestServer(t *testing.T) {

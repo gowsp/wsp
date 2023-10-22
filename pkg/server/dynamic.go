@@ -12,7 +12,7 @@ import (
 func (c *conn) NewDynamic(id string, conf *msg.WspConfig) error {
 	address := conf.Address()
 	logger.Info("open connect %s", address)
-	
+
 	remote, err := net.DialTimeout(conf.Network(), address, 5*time.Second)
 	if err != nil {
 		return err
@@ -23,6 +23,6 @@ func (c *conn) NewDynamic(id string, conf *msg.WspConfig) error {
 	}
 	io.Copy(local, remote)
 	local.Close()
-	logger.Info("close connect %s, addr %s", address,remote.RemoteAddr())
+	logger.Info("close connect %s, addr %s", address, remote.RemoteAddr())
 	return nil
 }

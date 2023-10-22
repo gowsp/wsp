@@ -17,6 +17,7 @@ func encode(id string, cmd msg.WspCmd, data []byte) ([]byte, error) {
 	msg := &msg.WspMessage{Id: id, Cmd: cmd, Data: data}
 	res, err := proto.Marshal(msg)
 	if err != nil {
+		logger.Error("encode msg %s error", cmd.String())
 		return nil, err
 	}
 	return res, nil
@@ -51,7 +52,7 @@ func (w *link) open() error {
 	}
 	w.wan.waiting.Store(w.id, w)
 	defer w.wan.waiting.Delete(w.id)
-	logger.Debug("send connect request %s", w.config)
+	logger.Debug("send connect request %s, id %s", w.config, w.id)
 	if err = w.wan.write(data, time.Second*5); err != nil {
 		return err
 	}

@@ -21,6 +21,7 @@ func newTCP(local net.Conn, writer io.WriteCloser) io.WriteCloser {
 
 type tcpConn struct {
 	num    uint64
+	state  uint32
 	remote io.WriteCloser
 	local  net.Conn
 	msgs   chan *msg.Data
@@ -40,6 +41,9 @@ func (c *tcpConn) start() {
 	}()
 }
 func (c *tcpConn) Rewrite(data *msg.Data) {
+	if atomic.LoadUint32(&c.state) != 0 {
+		return
+	}
 	c.msgs <- data
 }
 func (c *tcpConn) Write(b []byte) (n int, err error) {
@@ -53,6 +57,7 @@ func (c *tcpConn) Interrupt() error {
 }
 func (c *tcpConn) Close() error {
 	c.close.Do(func() {
+		atomic.AddUint32(&c.state, 1)
 		close(c.msgs)
 		c.remote.Close()
 	})

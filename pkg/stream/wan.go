@@ -1,38 +1,42 @@
 package stream
 
 import (
-	"context"
 	"io"
 	"net"
 	"sync"
 	"time"
 
+	"github.com/gobwas/ws"
+	"github.com/gobwas/ws/wsutil"
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/segmentio/ksuid"
 	"google.golang.org/protobuf/proto"
-	"nhooyr.io/websocket"
 )
 
-func NewWan(ws *websocket.Conn) *Wan {
-	ws.SetReadLimit(64 * 1024)
-	return &Wan{ws: ws}
+func NewWan(conn net.Conn, state ws.State) *Wan {
+	return &Wan{
+		conn:  conn,
+		state: state,
+	}
 }
 
 type Wan struct {
-	ws *websocket.Conn
+	conn  net.Conn
+	state ws.State
+	lock  sync.Mutex
 
 	waiting sync.Map
 	connect sync.Map
 }
 
-func (w *Wan) read() (websocket.MessageType, []byte, error) {
-	return w.ws.Read(context.Background())
+func (w *Wan) read() ([]byte, ws.OpCode, error) {
+	return wsutil.ReadData(w.conn, w.state)
 }
 func (w *Wan) write(data []byte, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return w.ws.Write(ctx, websocket.MessageBinary, data)
+	w.lock.Lock()
+	defer w.lock.Unlock()
+	return wsutil.WriteMessage(w.conn, w.state, ws.OpBinary, data)
 }
 func (w *Wan) newLink(id string, config *msg.WspConfig) *link {
 	return &link{
@@ -47,9 +51,13 @@ func (w *Wan) HeartBeat(d time.Duration) {
 	t := time.NewTicker(d)
 	for {
 		<-t.C
-		if err := w.ws.Ping(context.Background()); err != nil {
+		w.lock.Lock()
+		if err := wsutil.WriteMessage(w.conn, w.state, ws.OpPing, []byte{}); err != nil {
+			w.lock.Unlock()
+			w.conn.Close()
 			break
 		}
+		w.lock.Unlock()
 	}
 }
 func (w *Wan) DialTCP(local net.Conn, remote *msg.WspConfig) (io.WriteCloser, error) {

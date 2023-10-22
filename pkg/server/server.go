@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/gobwas/ws"
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
-	"nhooyr.io/websocket"
 )
 
 type Wsps struct {
@@ -65,17 +65,15 @@ func (s *Wsps) ServeProxy(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "client proto version %s not support, server proto is %s\n", proto, msg.PROTOCOL_VERSION)
 		return
 	}
-	ws, err := websocket.Accept(w, r, &websocket.AcceptOptions{OriginPatterns: []string{"*"}})
+	ws, _, _, err := ws.UpgradeHTTP(r, w)
 	if err != nil {
 		logger.Error("websocket accept %v", err)
 		return
 	}
-	defer ws.Close(websocket.StatusNormalClosure, "close connect")
 
 	router := &conn{wsps: s}
 	router.ListenAndServe(ws)
-	hub.Delete(router.listen)
-	logger.Info("close websocket connect")
+	router.close()
 }
 
 func getRemoteIP(r *http.Request) string {

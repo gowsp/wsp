@@ -5,10 +5,10 @@ import (
 	"io"
 	"time"
 
+	"github.com/gobwas/ws"
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"google.golang.org/protobuf/proto"
-	"nhooyr.io/websocket"
 )
 
 var ErrConnNotExist = errors.New("connection does not exist")
@@ -18,7 +18,7 @@ type Dialer interface {
 }
 
 type message struct {
-	mt   websocket.MessageType
+	mt   ws.OpCode
 	data []byte
 }
 
@@ -36,13 +36,13 @@ type Handler struct {
 func (w *Handler) Serve(wan *Wan) {
 	go w.process(wan)
 	for {
-		mt, data, err := wan.read()
+		data, mt, err := wan.read()
+		if mt == ws.OpClose {
+			break
+		}
 		if err == nil {
 			w.msgs <- message{mt: mt, data: data}
 			continue
-		}
-		if websocket.CloseStatus(err) == websocket.StatusNormalClosure {
-			break
 		}
 		if err != io.EOF {
 			logger.Error("error reading webSocket message: %s", err)
@@ -57,14 +57,15 @@ func (w *Handler) Serve(wan *Wan) {
 }
 
 func (w *Handler) process(wan *Wan) {
-	w.msgs = make(chan message, 64)
+	w.msgs = make(chan message, 256)
 	for message := range w.msgs {
 		switch message.mt {
-		case websocket.MessageBinary:
+		case ws.OpBinary:
 			data := message.data
 			m := new(msg.WspMessage)
 			if err := proto.Unmarshal(data, m); err != nil {
 				logger.Error("error unmarshal message: %s", err)
+				continue
 			}
 			err := w.serve(&msg.Data{Msg: m, Raw: &data}, wan)
 			if errors.Is(err, ErrConnNotExist) {

@@ -23,9 +23,3 @@ func (s *Hub) Store(channel string, r interface{}) {
 func (s *Hub) Remove(channel string) {
 	s.listen.Delete(channel)
 }
-func (s *Hub) Delete(router sync.Map) {
-	router.Range(func(key, value interface{}) bool {
-		s.listen.Delete(key)
-		return true
-	})
-}

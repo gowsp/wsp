@@ -3,18 +3,18 @@ package client
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/gobwas/ws"
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
 	"github.com/gowsp/wsp/pkg/stream"
-	"nhooyr.io/websocket"
 )
 
 type Wspc struct {
+	dialer  *ws.Dialer
 	start   sync.Once
 	config  WspcConfig
 	listen  sync.Map
@@ -23,7 +23,12 @@ type Wspc struct {
 }
 
 func New(config WspcConfig) *Wspc {
-	w := &Wspc{config: config}
+	headers := make(http.Header)
+	headers.Set("Auth", config.Auth)
+	headers.Set("Proto", msg.PROTOCOL_VERSION.String())
+	w := &Wspc{config: config,
+		dialer: &ws.Dialer{Header: ws.HandshakeHeaderHTTP(headers)},
+	}
 	w.handler = stream.NewHandler(w)
 	return w
 }
@@ -51,24 +56,15 @@ func (c *Wspc) ListenAndServe() {
 	c.ListenAndServe()
 }
 func (c *Wspc) connect() *stream.Wan {
-	headers := make(http.Header)
-	headers.Set("Auth", c.config.Auth)
-	headers.Set("Proto", msg.PROTOCOL_VERSION.String())
 	server := c.config.Server
-	ws, resp, err := websocket.Dial(context.Background(),
-		server, &websocket.DialOptions{HTTPHeader: headers})
+	conn, _, _, err := c.dialer.Dial(context.Background(), server)
 	if err != nil {
 		time.Sleep(3 * time.Second)
-		logger.Info("reconnect %s ...", server)
+		logger.Info("connect %s error %s, reconnect ...", server, err.Error())
 		return c.connect()
 	}
-	if resp.StatusCode == 400 || resp.StatusCode == 401 {
-		msg, _ := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		logger.Fatalln("error connect %s %s", server, string(msg))
-	}
 	logger.Info("successfully connected to %s", server)
-	wan := stream.NewWan(ws)
+	wan := stream.NewWan(conn, ws.StateClientSide)
 	go wan.HeartBeat(time.Second * 30)
 	return wan
 }
