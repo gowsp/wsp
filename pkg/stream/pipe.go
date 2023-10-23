@@ -37,6 +37,7 @@ type conn struct {
 	msgs   chan *msg.Data
 	laddr  net.Addr
 	close  sync.Once
+	state  uint32
 	wirter *link
 }
 
@@ -53,6 +54,9 @@ func (c *conn) start() {
 	}()
 }
 func (c *conn) Rewrite(data *msg.Data) {
+	if atomic.LoadUint32(&c.state) > 0 {
+		return
+	}
 	c.msgs <- data
 }
 func (c *conn) Read(b []byte) (n int, err error) {
@@ -63,12 +67,14 @@ func (c *conn) Write(b []byte) (n int, err error) {
 }
 func (c *conn) Interrupt() error {
 	c.close.Do(func() {
+		atomic.AddUint32(&c.state, 1)
 		close(c.msgs)
 	})
 	return nil
 }
 func (c *conn) Close() error {
 	c.close.Do(func() {
+		atomic.AddUint32(&c.state, 1)
 		close(c.msgs)
 		c.wirter.Close()
 	})

@@ -11,6 +11,7 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/stream"
 )
 
 func (r *conn) ServeHTTP(channel string, rw http.ResponseWriter, req *http.Request) {
@@ -32,15 +33,18 @@ func (r *conn) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *ht
 		logger.Error("websocket accept %v", err)
 		return
 	}
+	rw := stream.NewReadWriter(local)
+	logger.Info("start ws over tcp %s", conf.Channel())
 	go func() {
-		io.Copy(local, remote)
+		io.Copy(rw, remote)
 		local.Close()
 	}()
 	go func() {
-		io.Copy(remote, local)
+		io.Copy(remote, rw)
 		remote.Close()
 	}()
 }
+
 func (r *conn) ServeHTTPProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
 	proxy := r.NewHTTPProxy(conf)
 	if proxy == nil {
