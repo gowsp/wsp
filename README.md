@@ -50,7 +50,7 @@ wspc功能设计参考了ssh，配置项存在三种转发模式：
     {
       "server": "ws://wsp1.com:8010",
       "local": []
-    }，
+    },
     {
       "server": "ws://wsp1.com:8010",
       "remote": []
