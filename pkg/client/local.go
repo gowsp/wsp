@@ -1,11 +1,11 @@
 package client
 
 import (
-	"io"
 	"net"
 
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/stream"
 )
 
 func (c *Wspc) LocalForward() {
@@ -39,13 +39,12 @@ func (c *Wspc) ListenLocal(conf *msg.WspConfig) {
 func (c *Wspc) NewLocalConn(local net.Conn, config *msg.WspConfig) {
 	channel := config.Channel()
 	logger.Info("open remote channel %s", channel)
-	remote, err := c.wan.DialTCP(local, config)
+	remote, err := c.wan.DialTCP(local.LocalAddr(), config)
 	if err != nil {
 		local.Close()
 		logger.Error("close local channel %s, addr %s, error: %s", channel, local.LocalAddr(), err)
 		return
 	}
-	io.Copy(remote, local)
-	remote.Close()
+	stream.Copy(local, remote)
 	logger.Info("close local channel %s, addr %s", channel, local.LocalAddr())
 }

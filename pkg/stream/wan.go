@@ -1,6 +1,7 @@
 package stream
 
 import (
+	"hash/fnv"
 	"io"
 	"net"
 	"sync"
@@ -30,6 +31,14 @@ type Wan struct {
 	connect sync.Map
 }
 
+func (w *Wan) getTaskID(id string) uint64 {
+	if val, ok := w.connect.Load(id); ok {
+		return val.(Conn).TaskID()
+	}
+	h := fnv.New64a()
+	h.Write([]byte(id))
+	return h.Sum64()
+}
 func (w *Wan) read() ([]byte, ws.OpCode, error) {
 	return wsutil.ReadData(w.conn, w.state)
 }
@@ -43,7 +52,7 @@ func (w *Wan) newLink(id string, config *msg.WspConfig) *link {
 		id:     id,
 		wan:    w,
 		config: config,
-		done:   make(chan error, 1),
+		signal: NewSignal(),
 	}
 }
 
@@ -60,13 +69,13 @@ func (w *Wan) HeartBeat(d time.Duration) {
 		w.lock.Unlock()
 	}
 }
-func (w *Wan) DialTCP(local net.Conn, remote *msg.WspConfig) (io.WriteCloser, error) {
+func (w *Wan) DialTCP(local net.Addr, remote *msg.WspConfig) (io.ReadWriteCloser, error) {
 	id := ksuid.New().String()
 	writer := w.newLink(id, remote)
 	if err := writer.open(); err != nil || remote.IsRemoteType() {
 		return nil, err
 	}
-	conn := newTCP(local, writer)
+	conn := newConn(local, writer)
 	w.connect.Store(id, conn)
 	return conn, nil
 }
@@ -76,13 +85,13 @@ func (w *Wan) DialHTTP(remote *msg.WspConfig) (net.Conn, error) {
 	if err := link.open(); err != nil {
 		return nil, err
 	}
-	conn := newLan(&net.TCPAddr{}, link)
+	conn := newConn(&net.TCPAddr{}, link)
 	w.connect.Store(id, conn)
 	return conn, nil
 }
-func (w *Wan) Accept(id string, local net.Conn, config *msg.WspConfig) (io.WriteCloser, error) {
+func (w *Wan) Accept(id string, local net.Addr, config *msg.WspConfig) (io.ReadWriteCloser, error) {
 	link := w.newLink(id, config)
-	conn := newTCP(local, link)
+	conn := newConn(local, link)
 	w.connect.Store(id, conn)
 	if err := link.active(); err != nil {
 		conn.Close()
@@ -104,10 +113,11 @@ func (w *Wan) Reply(id string, message error) (err error) {
 }
 func (w *Wan) Bridge(req *msg.Data, config *msg.WspConfig, rwan *Wan) error {
 	p := &bridge{
+		taskID: nextTaskID(),
 		input:  rwan,
 		output: w,
 		config: config,
-		signal: make(chan struct{}, 1),
+		signal: NewSignal(),
 	}
 	return p.connect(req)
 }

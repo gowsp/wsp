@@ -8,6 +8,7 @@ import (
 
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/stream"
 )
 
 var errVersion = fmt.Errorf("unsupported socks version")
@@ -137,14 +138,13 @@ func (p *Socks5Proxy) readIP(conn net.Conn, len byte) (string, error) {
 }
 func (p *Socks5Proxy) replies(addr string, local net.Conn) {
 	config := p.conf.DynamicAddr(addr)
-	remote, err := p.wspc.wan.DialTCP(local, config)
+	remote, err := p.wspc.wan.DialTCP(local.LocalAddr(), config)
 	if err != nil {
 		local.Write([]byte{0x05, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 		logger.Error("close socks5 %s %s", addr, err.Error())
 		return
 	}
 	local.Write([]byte{0x05, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
-	io.Copy(remote, local)
-	remote.Close()
+	stream.Copy(local, remote)
 	logger.Info("close socks5 %s, addr %s", addr, local.RemoteAddr())
 }

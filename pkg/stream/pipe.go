@@ -4,94 +4,62 @@ import (
 	"io"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gowsp/wsp/pkg/msg"
 )
 
-type Lan interface {
-	Rewrite(data *msg.Data)
+type Conn interface {
+	TaskID() uint64
+	Rewrite(data *msg.Data) (n int, err error)
 	Interrupt() error
 	io.Closer
 }
 
-func newLan(laddr net.Addr, writer *link) net.Conn {
+func newConn(local net.Addr, remote *link) *conn {
 	pr, pw := io.Pipe()
-	conn := &conn{
+	return &conn{
+		taskID: nextTaskID(),
 		pr:     pr,
 		pw:     pw,
-		laddr:  laddr,
-		wirter: writer,
-		msgs:   make(chan *msg.Data, 64),
+		local:  local,
+		remote: remote,
 	}
-	conn.start()
-	return conn
 }
 
 type conn struct {
-	num uint64
-	pr  *io.PipeReader
-	pw  *io.PipeWriter
-
-	msgs   chan *msg.Data
-	laddr  net.Addr
+	taskID uint64
+	local  net.Addr
+	remote *link
+	pr     *io.PipeReader
+	pw     *io.PipeWriter
 	close  sync.Once
-	state  uint32
-	wirter *link
 }
 
-func (c *conn) start() {
-	go func() {
-		for msg := range c.msgs {
-			n, err := c.pw.Write(msg.Payload())
-			atomic.AddUint64(&c.num, uint64(n))
-			if err != nil {
-				c.Close()
-			}
-		}
-		c.pw.Close()
-	}()
+func (c *conn) TaskID() uint64 {
+	return c.taskID
 }
-func (c *conn) Rewrite(data *msg.Data) {
-	if atomic.LoadUint32(&c.state) > 0 {
-		return
-	}
-	c.msgs <- data
+func (c *conn) Rewrite(data *msg.Data) (n int, err error) {
+	return c.pw.Write(data.Payload())
 }
-func (c *conn) Read(b []byte) (n int, err error) {
-	return c.pr.Read(b)
+func (c *conn) Read(p []byte) (n int, err error) {
+	return c.pr.Read(p)
 }
-func (c *conn) Write(b []byte) (n int, err error) {
-	return c.wirter.Write(b)
+func (c *conn) Write(p []byte) (n int, err error) {
+	return c.remote.Write(p)
 }
 func (c *conn) Interrupt() error {
-	c.close.Do(func() {
-		atomic.AddUint32(&c.state, 1)
-		close(c.msgs)
-	})
-	return nil
+	return c.pw.Close()
 }
 func (c *conn) Close() error {
 	c.close.Do(func() {
-		atomic.AddUint32(&c.state, 1)
-		close(c.msgs)
-		c.wirter.Close()
+		c.pw.Close()
+		c.remote.Close()
 	})
 	return nil
 }
-func (c *conn) LocalAddr() net.Addr {
-	return c.laddr
-}
-func (c *conn) RemoteAddr() net.Addr {
-	return c.wirter.config
-}
-func (c *conn) SetDeadline(t time.Time) error {
-	return nil
-}
-func (c *conn) SetReadDeadline(t time.Time) error {
-	return nil
-}
-func (c *conn) SetWriteDeadline(t time.Time) error {
-	return nil
-}
+func (c *conn) LocalAddr() net.Addr                { return c.local }
+func (c *conn) RemoteAddr() net.Addr               { return c.remote.config }
+func (c *conn) SetDeadline(t time.Time) error      { return nil }
+func (c *conn) SetReadDeadline(t time.Time) error  { return nil }
+func (c *conn) SetWriteDeadline(t time.Time) error { return nil }

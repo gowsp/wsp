@@ -38,7 +38,7 @@ type link struct {
 	wan *Wan
 
 	config *msg.WspConfig
-	done   chan error
+	signal *Signal
 }
 
 func (w *link) open() error {
@@ -56,15 +56,11 @@ func (w *link) open() error {
 	if err = w.wan.write(data, time.Second*5); err != nil {
 		return err
 	}
-	select {
-	case err := <-w.done:
-		return err
-	case <-time.After(time.Second * 5):
-		return errors.New("timeout")
-	}
+	return w.signal.Wait(time.Second * 5)
 }
 func (w *link) ready(resp *msg.Data) error {
-	w.done <- parseResponse(resp)
+	err := parseResponse(resp)
+	w.signal.Notify(err)
 	return nil
 }
 func (w *link) active() error {

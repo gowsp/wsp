@@ -1,11 +1,9 @@
 package stream
 
 import (
-	"errors"
 	"io"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/gowsp/wsp/pkg/logger"
@@ -14,15 +12,12 @@ import (
 
 type bridge struct {
 	id     string
+	taskID uint64
 	input  *Wan
 	output *Wan
 	config *msg.WspConfig
 
-	num uint64
-
-	msgs   chan *msg.Data
-	signal chan struct{}
-	start  sync.Once
+	signal *Signal
 	close  sync.Once
 }
 
@@ -33,22 +28,18 @@ func (c *bridge) connect(data *msg.Data) error {
 	if err := c.input.write(*data.Raw, time.Second*5); err != nil {
 		return err
 	}
-	select {
-	case <-c.signal:
-		return nil
-	case <-time.After(time.Second * 5):
-		return errors.New("timeout")
-	}
+	return c.signal.Wait(time.Second * 5)
 }
 
 func (c *bridge) ready(resp *msg.Data) error {
-	c.signal <- struct{}{}
-	if err := parseResponse(resp); err != nil {
-		c.Write(*resp.Raw)
+	err := parseResponse(resp)
+	c.signal.Notify(err)
+	if err != nil {
 		return err
 	}
 	c.input.connect.Store(c.id, c)
 	c.output.connect.Store(c.id, &bridge{
+		taskID: nextTaskID(),
 		id:     c.id,
 		input:  c.output,
 		config: c.config,
@@ -57,22 +48,12 @@ func (c *bridge) ready(resp *msg.Data) error {
 	c.Rewrite(resp)
 	return nil
 }
-func (c *bridge) run() {
-	c.msgs = make(chan *msg.Data, 64)
-	go func() {
-		for msg := range c.msgs {
-			_, err := c.Write(*msg.Raw)
-			atomic.AddUint64(&c.num, uint64(len(msg.Payload())))
-			if err != nil {
-				logger.Error("brideg error %s", err)
-				c.Close()
-			}
-		}
-	}()
+func (c *bridge) TaskID() uint64 {
+	return c.taskID
 }
-func (c *bridge) Rewrite(data *msg.Data) {
-	c.start.Do(c.run)
-	c.msgs <- data
+func (c *bridge) Rewrite(data *msg.Data) (n int, err error) {
+	_, err = c.Write(*data.Raw)
+	return
 }
 func (c *bridge) Read(b []byte) (n int, err error) {
 	return 0, io.EOF
@@ -84,11 +65,8 @@ func (c *bridge) Write(b []byte) (n int, err error) {
 }
 func (c *bridge) Interrupt() error {
 	c.close.Do(func() {
-		close(c.msgs)
-		if val, ok := c.output.connect.LoadAndDelete(c.id); ok {
-			close(val.(*bridge).msgs)
-		}
 		logger.Info("close bridge %s", c.config.Channel())
+		c.output.connect.Delete(c.id)
 		data, _ := encode(c.id, msg.WspCmd_INTERRUPT, []byte{})
 		c.Write(data)
 	})
@@ -99,11 +77,9 @@ func (c *bridge) Close() error {
 		logger.Info("close bridge %s", c.config.Channel())
 		data, _ := encode(c.id, msg.WspCmd_INTERRUPT, []byte{})
 		if val, ok := c.input.connect.LoadAndDelete(c.id); ok {
-			close(val.(*bridge).msgs)
 			val.(*bridge).Write(data)
 		}
 		if val, ok := c.output.connect.LoadAndDelete(c.id); ok {
-			close(val.(*bridge).msgs)
 			val.(*bridge).Write(data)
 		}
 	})

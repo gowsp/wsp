@@ -9,7 +9,7 @@ import (
 	"github.com/gobwas/ws/wsutil"
 )
 
-func NewReadWriter(conn net.Conn) io.ReadWriter {
+func NewReadWriter(conn net.Conn) io.ReadWriteCloser {
 	return &wsReadWriter{
 		conn: conn,
 	}
@@ -37,4 +37,8 @@ func (w *wsReadWriter) Write(p []byte) (n int, err error) {
 		n = len(p)
 	}
 	return
+}
+
+func (w *wsReadWriter) Close() error {
+	return w.conn.Close()
 }

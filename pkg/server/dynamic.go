@@ -1,12 +1,12 @@
 package server
 
 import (
-	"io"
 	"net"
 	"time"
 
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/stream"
 )
 
 func (c *conn) NewDynamic(id string, conf *msg.WspConfig) error {
@@ -17,12 +17,11 @@ func (c *conn) NewDynamic(id string, conf *msg.WspConfig) error {
 	if err != nil {
 		return err
 	}
-	local, err := c.wan.Accept(id, remote, conf)
+	local, err := c.wan.Accept(id, remote.RemoteAddr(), conf)
 	if err != nil {
 		return err
 	}
-	io.Copy(local, remote)
-	local.Close()
+	stream.Copy(local, remote)
 	logger.Info("close connect %s, addr %s", address, remote.RemoteAddr())
 	return nil
 }

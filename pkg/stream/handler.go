@@ -2,7 +2,9 @@ package stream
 
 import (
 	"errors"
+	"fmt"
 	"io"
+	"runtime"
 	"time"
 
 	"github.com/gobwas/ws"
@@ -17,31 +19,33 @@ type Dialer interface {
 	NewConn(data *msg.Data, req *msg.WspRequest) error
 }
 
-type message struct {
-	mt   ws.OpCode
-	data []byte
-}
-
 func NewHandler(dialer Dialer) *Handler {
-	return &Handler{
+	worker := NewPollTaskPool(runtime.NumCPU()*4, 1024)
+	h := &Handler{
 		dialer: dialer,
+		cmds:   make(map[msg.WspCmd]handlerFunc),
+		loop:   NewTaskPool(1, 256),
+		worker: worker,
 	}
+	h.init()
+	return h
 }
 
 type Handler struct {
-	msgs   chan message
 	dialer Dialer
+	cmds   map[msg.WspCmd]handlerFunc
+	loop   *TaskPool
+	worker *PollTaskPool
 }
 
 func (w *Handler) Serve(wan *Wan) {
-	go w.process(wan)
 	for {
 		data, mt, err := wan.read()
 		if mt == ws.OpClose {
 			break
 		}
 		if err == nil {
-			w.msgs <- message{mt: mt, data: data}
+			w.process(wan, mt, data)
 			continue
 		}
 		if err != io.EOF {
@@ -49,39 +53,43 @@ func (w *Handler) Serve(wan *Wan) {
 		}
 		break
 	}
-	close(w.msgs)
+	w.loop.Close()
+	w.worker.Close()
 	wan.connect.Range(func(key, value any) bool {
-		value.(Lan).Interrupt()
+		value.(Conn).Interrupt()
 		return true
 	})
 }
 
-func (w *Handler) process(wan *Wan) {
-	w.msgs = make(chan message, 256)
-	for message := range w.msgs {
-		switch message.mt {
+func (w *Handler) process(wan *Wan, mt ws.OpCode, data []byte) {
+	w.loop.Add(func() {
+		switch mt {
 		case ws.OpBinary:
-			data := message.data
 			m := new(msg.WspMessage)
 			if err := proto.Unmarshal(data, m); err != nil {
 				logger.Error("error unmarshal message: %s", err)
-				continue
+				return
 			}
-			err := w.serve(&msg.Data{Msg: m, Raw: &data}, wan)
-			if errors.Is(err, ErrConnNotExist) {
-				logger.Error("connect %s not exists", m.Id)
-				data, _ := encode(m.Id, msg.WspCmd_INTERRUPT, []byte(err.Error()))
-				wan.write(data, time.Minute)
-			}
+			taskID := wan.getTaskID(m.Id)
+			w.worker.Add(taskID, func() {
+				err := w.serve(&msg.Data{Msg: m, Raw: &data}, wan)
+				if errors.Is(err, ErrConnNotExist) {
+					logger.Error("connect %s not exists", m.Id)
+					data, _ := encode(m.Id, msg.WspCmd_INTERRUPT, []byte(err.Error()))
+					wan.write(data, time.Minute)
+				}
+			})
 		default:
-			logger.Error("unsupported message type %v", message.mt)
+			logger.Error("unsupported message type %v", mt)
 		}
-	}
+	})
 }
-func (w *Handler) serve(data *msg.Data, wan *Wan) error {
-	id := data.ID()
-	switch data.Msg.Cmd {
-	case msg.WspCmd_CONNECT:
+
+type handlerFunc func(data *msg.Data, wan *Wan) error
+
+func (w *Handler) init() {
+	w.cmds[msg.WspCmd_CONNECT] = func(data *msg.Data, wan *Wan) error {
+		id := data.ID()
 		req := new(msg.WspRequest)
 		if err := proto.Unmarshal(data.Payload(), req); err != nil {
 			logger.Error("invalid request data %s", err)
@@ -95,26 +103,41 @@ func (w *Handler) serve(data *msg.Data, wan *Wan) error {
 				wan.Reply(id, err)
 			}
 		}()
-	case msg.WspCmd_RESPOND:
+		return nil
+	}
+	w.cmds[msg.WspCmd_RESPOND] = func(data *msg.Data, wan *Wan) error {
+		id := data.ID()
 		logger.Debug("receive %s connect response", id)
-		if val, ok := wan.waiting.Load(id); ok {
+		if val, ok := wan.waiting.LoadAndDelete(id); ok {
 			return val.(ready).ready(data)
 		}
 		return ErrConnNotExist
-	case msg.WspCmd_TRANSFER:
+	}
+	w.cmds[msg.WspCmd_TRANSFER] = func(data *msg.Data, wan *Wan) error {
+		id := data.ID()
 		logger.Trace("receive %s transfer data", id)
 		if val, ok := wan.connect.Load(id); ok {
-			val.(Lan).Rewrite(data)
+			_, err := val.(Conn).Rewrite(data)
+			if err != nil {
+				val.(Conn).Close()
+			}
 			return nil
 		}
 		return ErrConnNotExist
-	case msg.WspCmd_INTERRUPT:
+	}
+	w.cmds[msg.WspCmd_INTERRUPT] = func(data *msg.Data, wan *Wan) error {
+		id := data.ID()
 		logger.Debug("receive %s disconnect request", id)
 		if val, ok := wan.connect.LoadAndDelete(id); ok {
-			return val.(Lan).Interrupt()
+			return val.(Conn).Interrupt()
 		}
-	default:
-		logger.Error("unknown command %s", data.Msg.Cmd)
+		return nil
 	}
-	return nil
+}
+func (w *Handler) serve(data *msg.Data, wan *Wan) error {
+	cmd, ok := w.cmds[data.Cmd()]
+	if !ok {
+		return fmt.Errorf("unknown command %s", data.Msg.Cmd)
+	}
+	return cmd(data, wan)
 }

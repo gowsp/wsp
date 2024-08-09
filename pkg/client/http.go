@@ -10,6 +10,7 @@ import (
 
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/stream"
 )
 
 // HTTPProxy implement DynamicProxy
@@ -50,7 +51,7 @@ func (p *HTTPProxy) ServeConn(local net.Conn) error {
 	}
 	logger.Info("open http proxy %s", addr)
 	config := p.conf.DynamicAddr(addr)
-	remote, err := p.wspc.wan.DialTCP(local, config)
+	remote, err := p.wspc.wan.DialTCP(local.LocalAddr(), config)
 	if err != nil {
 		logger.Error("open http proxy %s error:", addr, err)
 		local.Write([]byte("HTTP/1.1 500\r\n\r\n"))
@@ -63,7 +64,7 @@ func (p *HTTPProxy) ServeConn(local net.Conn) error {
 		remote.Write(buffer.Bytes())
 	}
 	buffer.Reset()
-	io.Copy(remote, local)
+	stream.Copy(local, remote)
 	logger.Info("close http proxy %s", addr)
 	return nil
 }

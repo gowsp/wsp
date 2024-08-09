@@ -2,12 +2,12 @@ package client
 
 import (
 	"fmt"
-	"io"
 	"net"
 	"time"
 
 	"github.com/gowsp/wsp/pkg/logger"
 	"github.com/gowsp/wsp/pkg/msg"
+	"github.com/gowsp/wsp/pkg/stream"
 )
 
 func (c *Wspc) NewConn(data *msg.Data, req *msg.WspRequest) error {
@@ -26,19 +26,18 @@ func (c *Wspc) NewConn(data *msg.Data, req *msg.WspRequest) error {
 	}
 	var conn net.Conn
 	if conf.IsTunnel() {
-		conn, err = net.DialTimeout(remote.Network(), remote.Address(), 5*time.Second)
+		conn, err = net.DialTimeout(remote.Network(), remote.Address(), 7*time.Second)
 	} else {
-		conn, err = net.DialTimeout(conf.Network(), conf.Address(), 5*time.Second)
+		conn, err = net.DialTimeout(conf.Network(), conf.Address(), 7*time.Second)
 	}
 	if err != nil {
 		return err
 	}
-	local, err := c.wan.Accept(data.ID(), conn, conf)
+	local, err := c.wan.Accept(data.ID(), conn.RemoteAddr(), conf)
 	if err != nil {
 		return err
 	}
-	io.Copy(local, conn)
-	local.Close()
+	stream.Copy(local, conn)
 	logger.Info("close channel %s conn %s", channel, conn.RemoteAddr())
 	return nil
 }

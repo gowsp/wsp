@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"io"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -35,14 +34,7 @@ func (r *conn) ServeNetProxy(conf *msg.WspConfig, w http.ResponseWriter, req *ht
 	}
 	rw := stream.NewReadWriter(local)
 	logger.Info("start ws over tcp %s", conf.Channel())
-	go func() {
-		io.Copy(rw, remote)
-		local.Close()
-	}()
-	go func() {
-		io.Copy(remote, rw)
-		remote.Close()
-	}()
+	stream.Copy(rw, remote)
 }
 
 func (r *conn) ServeHTTPProxy(conf *msg.WspConfig, w http.ResponseWriter, req *http.Request) {
