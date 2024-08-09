@@ -32,7 +32,7 @@ func (c *Wspc) ListenLocal(conf *msg.WspConfig) {
 			logger.Error("accept local channel %s, error: %s", channel, err)
 			continue
 		}
-		c.NewLocalConn(conn, conf)
+		go c.NewLocalConn(conn, conf)
 	}
 }
 
