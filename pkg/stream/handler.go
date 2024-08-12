@@ -20,12 +20,12 @@ type Dialer interface {
 }
 
 func NewHandler(dialer Dialer) *Handler {
-	worker := NewPollTaskPool(runtime.NumCPU()*4, 1024)
 	h := &Handler{
 		dialer: dialer,
 		cmds:   make(map[msg.WspCmd]handlerFunc),
 		loop:   NewTaskPool(1, 256),
-		worker: worker,
+		event:  NewPollTaskPool(len(msg.WspCmd_value), 512),
+		worker: NewPollTaskPool(runtime.NumCPU()*4, 1024),
 	}
 	h.init()
 	return h
@@ -35,6 +35,7 @@ type Handler struct {
 	dialer Dialer
 	cmds   map[msg.WspCmd]handlerFunc
 	loop   *TaskPool
+	event  *PollTaskPool
 	worker *PollTaskPool
 }
 
@@ -53,8 +54,15 @@ func (w *Handler) Serve(wan *Wan) {
 		}
 		break
 	}
-	w.loop.Close()
-	w.worker.Close()
+	if wan.state.ClientSide() {
+		w.loop.Wait()
+		w.event.Wait()
+		w.worker.Wait()
+	} else {
+		w.loop.Close()
+		w.event.Close()
+		w.worker.Close()
+	}
 	wan.connect.Range(func(key, value any) bool {
 		value.(Conn).Interrupt()
 		return true
@@ -70,14 +78,16 @@ func (w *Handler) process(wan *Wan, mt ws.OpCode, data []byte) {
 				logger.Error("error unmarshal message: %s", err)
 				return
 			}
-			taskID := wan.getTaskID(m.Id)
-			w.worker.Add(taskID, func() {
-				err := w.serve(&msg.Data{Msg: m, Raw: &data}, wan)
-				if errors.Is(err, ErrConnNotExist) {
-					logger.Error("connect %s not exists", m.Id)
-					data, _ := encode(m.Id, msg.WspCmd_INTERRUPT, []byte(err.Error()))
-					wan.write(data, time.Minute)
-				}
+			w.event.Add(uint64(m.Cmd), func() {
+				taskID := wan.getTaskID(m.Id)
+				w.worker.Add(taskID, func() {
+					err := w.serve(&msg.Data{Msg: m, Raw: &data}, wan)
+					if errors.Is(err, ErrConnNotExist) {
+						logger.Error("connect %s not exists", m.Id)
+						data, _ := encode(m.Id, msg.WspCmd_INTERRUPT, []byte(err.Error()))
+						wan.write(data, time.Minute)
+					}
+				})
 			})
 		default:
 			logger.Error("unsupported message type %v", mt)
