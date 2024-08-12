@@ -83,7 +83,7 @@ func (w *Handler) process(wan *Wan, mt ws.OpCode, data []byte) {
 				w.worker.Add(taskID, func() {
 					err := w.serve(&msg.Data{Msg: m, Raw: &data}, wan)
 					if errors.Is(err, ErrConnNotExist) {
-						logger.Error("connect %s not exists", m.Id)
+						logger.Debug("connect %s not exists", m.Id)
 						data, _ := encode(m.Id, msg.WspCmd_INTERRUPT, []byte(err.Error()))
 						wan.write(data, time.Minute)
 					}
