@@ -24,7 +24,9 @@ flowchart TD
 
 ## 配置说明
 
-### wsps 服务端配置
+## Wsps
+
+服务端安装，根据操作系统从[Release](https://github.com/gowsp/wsp/releases/latest)下载相应的程序包，解压后将wsps放置在公网机器上，配置用于提供服务的web端口，最小化
 
 最小化配置如下：
 
@@ -33,6 +35,8 @@ flowchart TD
     "port": 8010
 }
 ```
+
+启动服务端， `./wsps -c wsps.json`，其他配置可参考 `configs/wsps_template.json`
 
 完整配置示例：
 
@@ -80,23 +84,32 @@ flowchart TD
 | key | 字符串 | 否 | SSL 私钥文件路径 |
 | cert | 字符串 | 否 | SSL 证书文件路径 |
 
-### wspc 客户端配置
+### Wspc
 
-基本配置格式如下：
+wspc功能设计参考了ssh，配置项存在三种转发模式：
+
+- DynamicForward，动态转发，提供正向代理如：socks5，http代理
+- RemoteForward，远程转发，将本地端口服务暴露在wsps上，支持 TCP  HTTP HTTPS 协议
+- LocalForward，本地转发，用于本地访问已注册的`远程转发`服务
+
+支持连接多个 wsps 服务端，配置格式类似如下：
 
 ```json
 {
   "client": [
     {
       "server": "ws://wsp1.com:8010",
-      "auth": "auth-token",
-      "dynamic": [],
-      "remote": [],
       "local": []
+    },
+    {
+      "server": "ws://wsp1.com:8010",
+      "remote": []
     }
   ]
 }
 ```
+
+`wspc`的其他配置可参考 `configs/wspc_template.json`
 
 完整配置示例：
 
@@ -136,45 +149,6 @@ flowchart TD
 | remote | 数组 | 否 | 远程转发配置（反向代理/网络穿透服务端） |
 | local | 数组 | 否 | 本地转发配置（网络穿透客户端） |
 | log  | 对象 | 否 | 日志配置 |
-
-## Wsps
-
-服务端安装，根据操作系统从[Release](https://github.com/gowsp/wsp/releases/latest)下载相应的程序包，解压后将wsps放置在公网机器上，配置用于提供服务的web端口，最小化配置如下：
-
-```json
-{
-    "port": 8010
-}
-```
-
-启动服务端， `./wsps -c wsps.json`，其他配置可参考 `configs/wsps_template.json`
-
-### Wspc
-
-wspc功能设计参考了ssh，配置项存在三种转发模式：
-
-- DynamicForward，动态转发，提供正向代理如：socks5，http代理
-- RemoteForward，远程转发，将本地端口服务暴露在wsps上，支持 TCP  HTTP HTTPS 协议
-- LocalForward，本地转发，用于本地访问已注册的`远程转发`服务
-
-支持连接多个 wsps 服务端，配置格式类似如下：
-
-```json
-{
-  "client": [
-    {
-      "server": "ws://wsp1.com:8010",
-      "local": []
-    },
-    {
-      "server": "ws://wsp1.com:8010",
-      "remote": []
-    }
-  ]
-}
-```
-
-`wspc`的其他配置可参考 `configs/wspc_template.json`
 
 ## 正向代理
 
