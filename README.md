@@ -84,9 +84,9 @@ flowchart TD
 | key | 字符串 | 否 | SSL 私钥文件路径 |
 | cert | 字符串 | 否 | SSL 证书文件路径 |
 
-### Wspc
+## Wspc
 
-wspc功能设计参考了ssh，配置项存在三种转发模式：
+客户端wspc功能设计参考了ssh，配置项存在三种转发模式：
 
 - DynamicForward，动态转发，提供正向代理如：socks5，http代理
 - RemoteForward，远程转发，将本地端口服务暴露在wsps上，支持 TCP  HTTP HTTPS 协议
