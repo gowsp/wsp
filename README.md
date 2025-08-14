@@ -22,9 +22,13 @@ flowchart TD
     wsps --> wspc3
 ```
 
+## 配置说明
+
 ## Wsps
 
-服务端安装，根据操作系统从[Release](https://github.com/gowsp/wsp/releases/latest)下载相应的程序包，解压后将wsps放置在公网机器上，配置用于提供服务的web端口，最小化配置如下：
+服务端安装，根据操作系统从[Release](https://github.com/gowsp/wsp/releases/latest)下载相应的程序包，解压后将wsps放置在公网机器上，配置用于提供服务的web端口，最小化
+
+最小化配置如下：
 
 ```json
 {
@@ -34,9 +38,55 @@ flowchart TD
 
 启动服务端， `./wsps -c wsps.json`，其他配置可参考 `configs/wsps_template.json`
 
-### Wspc
+完整配置示例：
 
-wspc功能设计参考了ssh，配置项存在三种转发模式：
+```json
+{
+    "log": {
+        "level": "info",
+        "output": "/var/log/wsps.log"
+    },
+    "ssl": {
+        "enable": false,
+        "key": "/var/cert/key.file",
+        "cert": "/var/cert/cert.file"
+    },
+    "host": "mywsps.com",
+    "auth": "auth",
+    "path": "/proxy",
+    "port": 8010
+}
+```
+
+完整配置项说明：
+
+| 属性 | 类型 | 必填 | 描述 |
+|------|------|------|------|
+| port | 整数 | 是 | 服务监听端口 |
+| auth | 字符串 | 否 | 认证 Token，客户端需要提供相同的 Token 才能连接 |
+| path | 字符串 | 否 | WebSocket 服务路径，默认为 "/" |
+| host | 字符串 | 否 | 主机名，用于域名模式的反向代理 |
+| log  | 对象 | 否 | 日志配置 |
+| ssl  | 对象 | 否 | SSL 配置 |
+
+#### 日志配置 (log)
+
+| 属性 | 类型 | 必填 | 描述 |
+|------|------|------|------|
+| level | 字符串 | 否 | 日志级别，支持 error、info、debug、trace |
+| output | 字符串 | 否 | 日志输出文件路径，默认输出到标准输出 |
+
+#### SSL 配置 (ssl)
+
+| 属性 | 类型 | 必填 | 描述 |
+|------|------|------|------|
+| enable | 布尔值 | 否 | 是否启用 SSL，默认为 false |
+| key | 字符串 | 否 | SSL 私钥文件路径 |
+| cert | 字符串 | 否 | SSL 证书文件路径 |
+
+## Wspc
+
+客户端wspc功能设计参考了ssh，配置项存在三种转发模式：
 
 - DynamicForward，动态转发，提供正向代理如：socks5，http代理
 - RemoteForward，远程转发，将本地端口服务暴露在wsps上，支持 TCP  HTTP HTTPS 协议
@@ -60,6 +110,45 @@ wspc功能设计参考了ssh，配置项存在三种转发模式：
 ```
 
 `wspc`的其他配置可参考 `configs/wspc_template.json`
+
+完整配置示例：
+
+```json
+{
+    "log": {
+        "level": "info",
+        "output": "/var/log/wspc.log"
+    },
+    "client": [
+        {
+            "auth": "auth",
+            "server": "ws://mywsps.com:8010/proxy",
+            "dynamic": [
+                "socks5://:1080"
+            ],
+            "remote": [
+                "tcp://ssh:passwod@192.168.1.100:22",
+                "http://127.0.0.1:8080?mode=path&value=api",
+                "http://127.0.0.1:8080?mode=domain&value=custom.com"
+            ],
+            "local": [
+                "tcp://ssh:passwod@127.0.0.1:2200"
+            ]
+        }
+    ]
+}
+```
+
+完整配置项说明：
+
+| 属性 | 类型 | 必填 | 描述 |
+|------|------|------|------|
+| auth | 字符串 | 否 | 认证 Token，需要与服务端配置一致 |
+| server | 字符串 | 是 | 服务端地址 |
+| dynamic | 数组 | 否 | 动态转发配置（正向代理） |
+| remote | 数组 | 否 | 远程转发配置（反向代理/网络穿透服务端） |
+| local | 数组 | 否 | 本地转发配置（网络穿透客户端） |
+| log  | 对象 | 否 | 日志配置 |
 
 ## 正向代理
 
